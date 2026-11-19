@@ -41,6 +41,7 @@ static inline uint64_t read_cr3_(void) {
 }
 
 uint64_t sched_context_switches(void) { return switches; }
+uint64_t sched_kernel_cr3(void) { return kernel_cr3; }
 int sched_live_stacks(void) { return live_stacks; }
 
 // ---------------------------------------------------------------- queues ----
@@ -113,7 +114,11 @@ static void schedule(void) {
     check_canary(prev);
     switches++;
     sched_current = next;
-    if (next->kstack_top) arch_set_kernel_stack(next->kstack_top);
+    if (next->kstack_top) {
+        arch_set_kernel_stack(next->kstack_top);
+        syscall_kernel_rsp = next->kstack_top;
+    }
+    if (next->proc) uvm_sync_kernel(next->cr3);   // pick up new kernel mappings
     if (next->cr3 && next->cr3 != read_cr3_())
         __asm__ volatile ("mov %0, %%cr3" :: "r"(next->cr3) : "memory");
     context_switch(&prev->rsp, next->rsp);
@@ -212,6 +217,7 @@ static void reap_zombies(void) {
         zombie_head = t->qnext;
         all_remove(t);
         check_canary(t);
+        process_free(t);
         kfree(t->stack);
         kfree(t);
         live_stacks--;
@@ -339,4 +345,6 @@ void sched_init(void) {
     irq_restore(f);
 
     sched_selftest();
+    process_init();
+    user_selftest();
 }

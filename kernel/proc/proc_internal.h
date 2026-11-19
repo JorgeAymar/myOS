@@ -39,3 +39,24 @@ void sched_make_ready(struct thread *t);
 void sched_block(void);             // current->state already set; switch away
 void sched_selftest(void);
 int sched_live_stacks(void);
+
+// ---- userspace (process.c, uvm.c, syscall.c, user_entry.asm) ----
+#define USER_TOP 0x0000800000000000ull      // first non-user (non-canonical) address
+uint64_t sched_kernel_cr3(void);
+void process_init(void);
+void process_free(struct thread *t);
+__attribute__((noreturn)) void process_exit(int code);
+void user_selftest(void);
+
+void uvm_init(uint64_t kernel_cr3);
+uint64_t uvm_create(void);
+void uvm_sync_kernel(uint64_t pml4);
+bool uvm_map(uint64_t pml4, uint64_t va, uint64_t phys, bool writable, bool exec);
+void *uvm_alloc(uint64_t pml4, uint64_t va, bool writable, bool exec);
+void *uvm_user_ptr(uint64_t pml4, uint64_t va, bool write);
+void uvm_destroy(uint64_t pml4);
+int uvm_pages_live(void);
+
+extern uint64_t syscall_kernel_rsp;
+void syscall_entry(void);
+uint64_t syscall_bytes_written(void);

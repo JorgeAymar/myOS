@@ -133,3 +133,32 @@ void sched_selftest(void) {
     kprintf("[OK] sched reaped 6 threads, %d left, %lu switches, test took %lu ms\n",
             n, sched_context_switches() - sw0, took);
 }
+
+// ---- ring 3 ----
+extern const uint8_t user_hello_elf[], user_hello_elf_end[];
+
+void user_selftest(void) {
+    size_t size = (size_t)(user_hello_elf_end - user_hello_elf);
+    int pages0 = uvm_pages_live();
+    uint64_t w0 = syscall_bytes_written();
+
+    static int code_ok = -12345, code_bad = -12345;
+    tid_t pid = process_spawn("user/hello", user_hello_elf, size, 0, &code_ok);
+    if (pid < 0) panic("user test: process_spawn(hello) failed");
+    thread_join(pid);
+    if (code_ok != 42) panic("user test: hello exited with %d, expected 42", code_ok);
+    uint64_t written = syscall_bytes_written() - w0;
+    if (written != 18) panic("user test: hello wrote %lu bytes, expected 18", written);
+
+    tid_t bad = process_spawn("user/faulty", user_hello_elf, size, 1, &code_bad);
+    if (bad < 0) panic("user test: process_spawn(faulty) failed");
+    thread_join(bad);
+    if (code_bad != PROC_EXIT_KILLED) panic("user test: faulting process exit code %d", code_bad);
+
+    thread_sleep_ms(2);                       // idle reaps both processes
+    if (uvm_pages_live() != pages0 || sched_live_stacks() != 1)
+        panic("user test: leak after exit (%d user pages, %d stacks)",
+              uvm_pages_live() - pages0, sched_live_stacks());
+    kprintf("[OK] user ring3: pid %d exit=%d via syscalls, faulting pid %d killed, "
+            "address spaces freed\n", pid, code_ok, bad);
+}

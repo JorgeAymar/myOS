@@ -114,3 +114,12 @@ void cond_init(cond_t *c);
 void cond_wait(cond_t *c, mutex_t *m);      // atomically unlocks m, waits, relocks
 void cond_signal(cond_t *c);
 void cond_broadcast(cond_t *c);
+
+// ---- userspace processes (ring 3) ----
+// Loads a static ELF64 executable into a new address space and runs it in
+// ring 3 as a new thread; `arg` arrives in rdi of its entry point. When it
+// exits (or is killed by a CPU exception: PROC_EXIT_KILLED) its exit code is
+// stored to *exit_code if non-NULL (the pointer must stay valid until then).
+// Returns the pid (== tid, usable with thread_join) or -1.
+#define PROC_EXIT_KILLED (-1)
+tid_t process_spawn(const char *name, const void *elf, size_t size, long arg, int *exit_code);

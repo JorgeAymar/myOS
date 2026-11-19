@@ -30,6 +30,18 @@ void timer_set_sleep_hook(sleep_hook_t hook);
 // Kernel stack loaded by the CPU on a ring 3 -> ring 0 transition (TSS.rsp0).
 void arch_set_kernel_stack(uint64_t rsp0);
 
+// ---- userspace support (kernel/proc) ----
+// Enables SYSCALL/SYSRET (EFER.SCE, STAR, LSTAR=entry, FMASK clears IF/DF/TF/AC).
+// GDT selectors for ring 3: user data 0x1b, user code 0x23.
+#define ARCH_USER_CS 0x23
+#define ARCH_USER_SS 0x1b
+void arch_enable_syscall(void (*entry)(void));
+// Called for a CPU exception raised in ring 3 (interrupts disabled, on the
+// thread's kernel stack). The hook normally kills the faulting thread and does
+// not return; if it returns, the exception is treated as fatal (panic).
+typedef void (*user_fault_hook_t)(uint64_t vector, uint64_t rip, uint64_t error_code);
+void arch_set_user_fault_hook(user_fault_hook_t hook);
+
 static inline void cpu_hlt(void) { __asm__ volatile ("hlt"); }
 static inline void cpu_cli(void) { __asm__ volatile ("cli" ::: "memory"); }
 static inline void cpu_sti(void) { __asm__ volatile ("sti" ::: "memory"); }
