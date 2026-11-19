@@ -6,6 +6,7 @@
 #include "string.h"
 #include "kprintf.h"
 #include "panic.h"
+#include "boot.h"
 
 #define SELFTEST_INITRD_FILE "/docs/selftest.txt"
 #define SELFTEST_INITRD_TEXT "myOS initrd self-test v1\n"
@@ -189,5 +190,6 @@ void fs_init(void) {
         return;
     }
     kprintf("[OK] fat32 mounted /disk %s\n", info);
-    fat32_selftest();
+    // The write/verify test modifies the disk: only in test mode (make test uses a fresh copy).
+    if (boot_is_test()) fat32_selftest();
 }

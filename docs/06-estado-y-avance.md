@@ -34,7 +34,7 @@
 
 ## Tiempo de arranque
 
-Desde que se lanza QEMU hasta que el escritorio está listo pasan **unos 2,8 s** en un Mac M3 emulando x86_64:
+Desde que se lanza QEMU hasta que el escritorio está listo pasan **unos 2,5 s** en un Mac M3 emulando x86_64:
 
 | Momento | Hito |
 |---|---|
@@ -42,10 +42,10 @@ Desde que se lanza QEMU hasta que el escritorio está listo pasan **unos 2,8 s**
 | 0,85 s | CPU, interrupciones y memoria listos |
 | 1,1 s | Multitarea, ring 3, teclado y ratón listos |
 | 1,4 s | Disco FAT32 montado y verificado |
-| 2,7 s | Red: DHCP, ping, DNS y descarga HTTP de prueba |
-| 2,8 s | Escritorio visible |
+| 2,4 s | Red: DHCP (en modo test también ping, DNS y HTTP) |
+| 2,5 s | Escritorio visible |
 
-Casi la mitad del tiempo se va en los autotests de red, que salen a Internet. Se pueden limitar al modo test para que el arranque normal baje a 1,5 s.
+Los autotests de red y de escritura en disco ya solo corren en modo test. El segundo que tarda DHCP se debe a la autonegociación simulada de la tarjeta de red de QEMU.
 
 ## Tamaño del código
 

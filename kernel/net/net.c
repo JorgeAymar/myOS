@@ -6,6 +6,7 @@
 #include "kprintf.h"
 #include "panic.h"
 #include "string.h"
+#include "boot.h"
 
 struct netif net_if;
 bool net_in_poll;
@@ -124,5 +125,6 @@ void net_init(void) {
     kprintf("[OK] dhcp ip=%s mask=%s gw=%s dns=%s\n", ip_to_str(net_if.ip, a),
             ip_to_str(net_if.mask, b), ip_to_str(net_if.gw, c), ip_to_str(net_if.dns, d));
 
-    net_selftest();
+    // ping/DNS/HTTP go out to the internet and cost ~1.3 s: only in test mode.
+    if (boot_is_test()) net_selftest();
 }

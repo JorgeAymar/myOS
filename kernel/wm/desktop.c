@@ -5,6 +5,7 @@
 #include "arch.h"
 #include "rtc.h"
 #include "kprintf.h"
+#include "net.h"
 
 static bool ready;
 static uint8_t buttons;
@@ -111,6 +112,7 @@ void desktop_init(void) {
 
 void desktop_frame(void) {
     if (!ready) return;
+    net_poll();   // keep the network stack serviced (ARP/ICMP replies, TCP) after boot
     struct input_event ev;
     for (int n = 0; n < 512 && input_poll(&ev); n++) handle(&ev);
 

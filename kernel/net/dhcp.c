@@ -77,11 +77,16 @@ bool dhcp_run(uint32_t timeout_ms) {
     uint64_t deadline = timer_ticks_ms() + timeout_ms;
     bool ok = false;
     xid = 0x6d790000u ^ (uint32_t)timer_ticks_ms() ^ ((uint32_t)net_if.mac[5] << 8);
+    // The first DISCOVER is often lost while the link settles: retry quickly
+    // (200, 400, 800, then every 1000 ms) instead of waiting a full second.
+    uint64_t wait = 200;
     while (!ok && timer_ticks_ms() < deadline) {
         state = 0;
         xid++;
         dhcp_send(DHCPDISCOVER);
-        if (!NET_WAIT(state == DHCPOFFER, 1000)) continue;
+        bool offered = NET_WAIT(state == DHCPOFFER, wait);
+        if (wait < 1000) wait = wait * 2 > 1000 ? 1000 : wait * 2;
+        if (!offered) continue;
         dhcp_send(DHCPREQUEST);
         if (!NET_WAIT(state == DHCPACK || state == DHCPNAK, 1000)) continue;
         ok = state == DHCPACK;
