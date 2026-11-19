@@ -16,7 +16,7 @@ Firmware (BIOS o UEFI)
             ├─ pci_init            enumera el bus PCI
             ├─ sched_init          hilos, scheduler con desalojo, ring 3
             ├─ input_init          PS/2 teclado + ratón, RTC
-            ├─ fs_init             VFS, initrd, AHCI, FAT32 (en curso)
+            ├─ fs_init             VFS, initrd (/), AHCI, FAT32 (/disk)
             ├─ net_init            e1000 + TCP/IP, DHCP, DNS, HTTP
             ├─ desktop_init        compositor, gestor de ventanas, escritorio
             └─ modo test ? 3 frames + "[TEST] boot OK" + salida de QEMU
@@ -73,7 +73,8 @@ kernel/
 ├── gfx/ wm/ apps/  gráficos, ventanas, escritorio
 ├── proc/           sched, sync, process, syscall, ELF
 ├── net/            eth, ip, udp, dhcp, dns, tcp, http
-├── fs/             en curso
+├── fs/             vfs, initrd, fat32, blockdev
+initrd/             contenido del initrd (/)
 user/               programas de usuario (ring 3)
 mk/                 extensiones del Makefile por módulo
 tests/              boot_test.sh, screenshot.sh

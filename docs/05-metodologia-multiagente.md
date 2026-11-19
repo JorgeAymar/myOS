@@ -29,9 +29,13 @@ Antes de lanzarla, el integrador añadió el bus **PCI** y `mmio_map()`, que com
 |---|---|---|
 | net | `kernel/net/`, `drivers/e1000.c` | e1000, ARP, IP, ICMP, UDP, DHCP, DNS, TCP, HTTP ✅ |
 | proc | `kernel/proc/` | Hilos, scheduler con desalojo, sincronización y ring 3 con syscalls y ELF ✅ |
-| fs | `kernel/fs/`, `drivers/ahci.c` | VFS, initrd, AHCI, FAT32 🔄 |
+| fs | `kernel/fs/`, `drivers/ahci.c` | VFS, initrd, AHCI, FAT32 con nombres largos ✅ |
 
 Al integrar proc, el agente avisó de que el heap no tenía protección contra el desalojo. El integrador la añadió (secciones con interrupciones desactivadas en el PMM, el VMM y el heap) antes de seguir.
+
+Lecciones de la integración de fs:
+- Una regla dentro de `mk/*.mk` pasa a ser el objetivo por defecto de `make`, por eso cada `.mk` fija `.DEFAULT_GOAL := all`.
+- SeaBIOS intentaba arrancar desde el disco FAT32, por eso se añadió `-boot order=d`.
 
 ## Instrucciones para cada agente
 

@@ -8,7 +8,7 @@ A hobby operating system written from scratch in **C and assembly** for **x86_64
 
 The project is built with [Claude Code](https://claude.com/claude-code). Work moves in small phases, each with automated verification, and several agents work in parallel against well-defined module contracts.
 
-> **Status:** v0.1 desktop is running. Boots on BIOS and UEFI with a macOS-inspired desktop (menu bar, frosted dock, windows with traffic-light buttons, Inter font), preemptive multitasking, ring 3 processes with syscalls, PS/2 keyboard and mouse, and a TCP/IP stack (DHCP, DNS, HTTP). The filesystem (AHCI + FAT32) is in progress. See [docs/](docs/) for the full documentation (Spanish, Markdown + PDF).
+> **Status:** v0.1 desktop is running. Boots on BIOS and UEFI with a macOS-inspired desktop (menu bar, frosted dock, windows with traffic-light buttons, Inter font), preemptive multitasking, ring 3 processes with syscalls, PS/2 keyboard and mouse, and a TCP/IP stack (DHCP, DNS, HTTP). A VFS with an initrd and a read/write FAT32 disk over AHCI. See [docs/](docs/) for the full documentation (Spanish, Markdown + PDF).
 
 ## Features (v0.1 target)
 
@@ -21,13 +21,13 @@ The project is built with [Claude Code](https://claude.com/claude-code). Work mo
 - [x] macOS-inspired desktop: menu bar, frosted dock with magnification, draggable windows
 - [x] Preemptive multitasking, mutexes, semaphores; ring 3 processes, syscalls, ELF loader
 - [x] PCI, e1000 NIC, TCP/IP stack: ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, HTTP
-- [ ] Filesystem: VFS, initrd, AHCI, FAT32
+- [x] Filesystem: VFS, initrd (`/`), AHCI SATA driver, FAT32 read/write with long names (`/disk`)
 - [ ] Apps: Terminal with a shell, Files, Clock, Settings
 
 ## Requirements (macOS, Apple Silicon or Intel)
 
 ```bash
-brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils
+brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils mtools
 ```
 
 The Limine binaries (branch `v9.x-binary`) are fetched automatically on the first `make`.

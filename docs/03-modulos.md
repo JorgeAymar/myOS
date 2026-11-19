@@ -72,7 +72,25 @@ Todas las llamadas bloqueantes tienen tiempo límite y no dependen del scheduler
   - Los hilos terminados se liberan.
   - Un programa en ring 3 imprime `hello from ring 3` y termina con código 42; otro que escribe en memoria del kernel es eliminado.
 
-## 3.7 Escritorio estilo macOS (`kernel/gfx/`, `kernel/wm/`, `kernel/apps/`)
+## 3.7 Almacenamiento y archivos (`kernel/fs/`, `drivers/ahci.c`)
+
+- **VFS:** tabla de montajes con búsqueda por el prefijo más largo y normalización de rutas.
+  - **Archivos:** `vfs_open`, `read`, `write`, `seek`, `close` y `read_all`.
+  - **Directorios y metadatos:** `vfs_readdir`, `mkdir`, `create`, `unlink` y `stat`.
+  - **Errores:** códigos `VFS_E*` y `vfs_strerror()`.
+- **initrd (`/`):** un tar USTAR que Limine carga como módulo, de solo lectura. Su contenido sale de la carpeta `initrd/` del repo.
+- **AHCI:** traspaso de control desde la BIOS, reinicio y modo AHCI. Envía IDENTIFY y lee y escribe con READ/WRITE DMA EXT, pasando por un buffer intermedio de 64 KiB de páginas físicas.
+  - Las unidades ATAPI, como el CD-ROM, se ignoran.
+  - Todas las esperas tienen tiempo límite.
+  - Si no hay disco, solo avisa y el arranque sigue.
+- **FAT32 (`/disk`):** lectura y escritura sobre un disco con o sin particiones. Hace crecer las cadenas de clusters y actualiza **las dos FAT**.
+  - Lee y escribe nombres largos (LFN) y genera alias cortos `~N`.
+  - Permite `mkdir` con `.` y `..`, `truncate`, `append` y `unlink`, que rechaza directorios no vacíos.
+  - Los nombres no distinguen mayúsculas.
+- **Imagen de disco:** `tools/mkdisk.sh` crea con **mtools** una imagen FAT32 de 64 MiB con archivos de ejemplo. Los tests trabajan siempre sobre una copia nueva.
+- **Comprobación externa:** `fsck_msdos` del Mac da la imagen por consistente después de que myOS escriba en ella.
+
+## 3.8 Escritorio estilo macOS (`kernel/gfx/`, `kernel/wm/`, `kernel/apps/`)
 
 ![Escritorio de myOS v0.1](img/desktop-v0.1-macos.png)
 
@@ -101,6 +119,10 @@ hello from ring 3
 [OK] user ring3: pid 8 exit=42 via syscalls, faulting pid 9 killed, address spaces freed
 [OK] input ps2 kbd=yes mouse=yes wheel=yes
 [OK] rtc 2026-11-19 02:12:41
+[OK] fs initrd files=4 entries=5
+[OK] ahci port 0 sectors=131072 model='QEMU HARDDISK'
+[OK] fat32 mounted /disk sata0 label='MYOSDISK' part_lba=0 clusters=129022 cluster_size=512
+[OK] fat32 selftest: read, write 13522 bytes, verify, mkdir, readdir, unlink
 [OK] net e1000 mac=52:54:00:12:34:56 model=82540EM link up
 [OK] dhcp ip=10.0.2.15 mask=255.255.255.0 gw=10.0.2.2 dns=10.0.2.3
 [OK] arp 10.0.2.2 is 52:55:0a:00:02:02

@@ -3,7 +3,7 @@
 ## Toolchain
 
 ```bash
-brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils
+brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils mtools
 ```
 
 | Herramienta | Para qué |
@@ -11,6 +11,7 @@ brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils
 | `x86_64-elf-gcc` 16 / `x86_64-elf-ld` | Compilador cruzado y enlazador (no se usa el clang del Mac) |
 | `nasm` | Rutinas de interrupción en ensamblador |
 | `xorriso` | Generar la ISO híbrida BIOS + UEFI |
+| `mtools` | Crear la imagen FAT32 `build/disk.img` sin montarla |
 | `qemu-system-x86_64` | Emular un PC x86_64 (máquina q35) en el Mac ARM |
 | Limine v9 | Bootloader; se descarga solo en `limine/` |
 
@@ -21,9 +22,10 @@ Opciones del kernel: `-ffreestanding -mcmodel=kernel -mno-red-zone -mno-sse -mno
 | Comando | Qué hace |
 |---|---|
 | `make` | Compila el kernel y genera `build/myos.iso` |
-| `make run` / `make run-uefi` | Abre QEMU con ventana (BIOS o UEFI) |
+| `make run` / `make run-uefi` | Abre QEMU con ventana (BIOS o UEFI). La imagen se escala al redimensionar (`zoom-to-fit`) |
 | `make test` | Test automático sin pantalla en BIOS **y** UEFI |
 | `make screenshot` | Captura PNG del escritorio en `build/screenshot.png` |
+| `make disk` | Regenera `build/disk.img` desde cero |
 | `make debug` | Arranca en pausa con GDB en `:1234` y registra interrupciones y reinicios |
 
 ## Protocolo de tests
