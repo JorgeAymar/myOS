@@ -18,7 +18,7 @@ CFLAGS := -std=gnu11 -O2 -g -Wall -Wextra -Werror \
           -fno-PIC -fno-pie -m64 -march=x86-64 \
           -mno-80387 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone \
           -mcmodel=kernel -Ikernel/include -MMD -MP
-LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T kernel/linker.ld
+LDFLAGS := -nostdlib -static -z noexecstack -z max-page-size=0x1000 -T kernel/linker.ld
 NASMFLAGS := -f elf64 -g
 
 C_SRCS   := $(shell find kernel -name '*.c')
