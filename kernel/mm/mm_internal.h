@@ -20,3 +20,15 @@ void heap_init(void);
 void mm_zero_page(void *virt);
 uint64_t heap_small_end(void);     // current top of the first-fit arena (for tests)
 size_t heap_small_blocks(size_t *free_count);
+
+// Single-CPU critical sections: save RFLAGS + cli, restore afterwards. Nestable,
+// safe from any thread (the scheduler preempts only from IRQs). Used to make the
+// PMM and heap safe under preemptive multitasking.
+static inline uint64_t mm_irq_save(void) {
+    uint64_t f;
+    __asm__ volatile ("pushfq; pop %0; cli" : "=r"(f) : : "memory");
+    return f;
+}
+static inline void mm_irq_restore(uint64_t f) {
+    if (f & (1ull << 9)) __asm__ volatile ("sti" ::: "memory");
+}

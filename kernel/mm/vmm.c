@@ -50,7 +50,7 @@ static uint64_t *walk(uint64_t va, bool create, bool user) {
     return t;
 }
 
-bool vmm_map(uint64_t virt, uint64_t phys, uint64_t flags) {
+static bool vmm_map_unlocked(uint64_t virt, uint64_t phys, uint64_t flags) {
     if ((virt | phys) & (PAGE_SIZE - 1)) return false;
     if (!nx_supported) flags &= ~VMM_NX;
     uint64_t *pt = walk(virt, true, flags & VMM_USER);
@@ -60,7 +60,7 @@ bool vmm_map(uint64_t virt, uint64_t phys, uint64_t flags) {
     return true;
 }
 
-void vmm_unmap(uint64_t virt) {
+static void vmm_unmap_unlocked(uint64_t virt) {
     virt &= ~(uint64_t)(PAGE_SIZE - 1);
     uint64_t *pt = walk(virt, false, false);
     if (!pt) return;
@@ -80,4 +80,17 @@ uint64_t vmm_translate(uint64_t virt) {
         t = table_at(e);
     }
     return 0;
+}
+
+// ---- locked public entry points ----
+bool vmm_map(uint64_t virt, uint64_t phys, uint64_t flags) {
+    uint64_t f = mm_irq_save();
+    bool r = vmm_map_unlocked(virt, phys, flags);
+    mm_irq_restore(f);
+    return r;
+}
+void vmm_unmap(uint64_t virt) {
+    uint64_t f = mm_irq_save();
+    vmm_unmap_unlocked(virt);
+    mm_irq_restore(f);
 }

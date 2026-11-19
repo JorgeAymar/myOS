@@ -69,7 +69,7 @@ void pmm_init(void) {
     next_hint = 0;
 }
 
-uint64_t pmm_alloc_page(void) {
+static uint64_t pmm_alloc_page_unlocked(void) {
     uint64_t words = (bitmap_pages + 63) / 64;
     for (uint64_t n = 0; n < words; n++) {
         uint64_t w = (next_hint + n) % words;
@@ -87,7 +87,7 @@ uint64_t pmm_alloc_page(void) {
     return 0;
 }
 
-void pmm_free_page(uint64_t phys) {
+static void pmm_free_page_unlocked(uint64_t phys) {
     if (phys & (PAGE_SIZE - 1)) panic("pmm_free_page: unaligned address %p", (void *)phys);
     uint64_t pg = phys / PAGE_SIZE;
     if (pg == 0 || pg >= bitmap_pages) panic("pmm_free_page: bad address %p", (void *)phys);
@@ -99,3 +99,16 @@ void pmm_free_page(uint64_t phys) {
 
 uint64_t pmm_total_bytes(void) { return total_bytes; }
 uint64_t pmm_free_bytes(void) { return free_pages * PAGE_SIZE; }
+
+// ---- locked public entry points ----
+uint64_t pmm_alloc_page(void) {
+    uint64_t f = mm_irq_save();
+    uint64_t r = pmm_alloc_page_unlocked();
+    mm_irq_restore(f);
+    return r;
+}
+void pmm_free_page(uint64_t phys) {
+    uint64_t f = mm_irq_save();
+    pmm_free_page_unlocked(phys);
+    mm_irq_restore(f);
+}

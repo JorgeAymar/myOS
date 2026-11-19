@@ -148,12 +148,12 @@ static struct block *checked_header(void *ptr, const char *who) {
     return b;
 }
 
-void *kmalloc(size_t size) {
+static void * kmalloc_unlocked(size_t size) {
     if (size == 0 || size > (1ull << 40)) return NULL;
     return size >= LARGE_THRESHOLD ? large_alloc(size) : small_alloc(size);
 }
 
-void *kcalloc(size_t n, size_t size) {
+static void * kcalloc_unlocked(size_t n, size_t size) {
     if (size && n > (size_t)-1 / size) return NULL;
     size_t total = n * size;
     void *p = kmalloc(total);
@@ -163,7 +163,7 @@ void *kcalloc(size_t n, size_t size) {
 
 static size_t capacity(const struct block *b) { return b->size - HDR; }
 
-void kfree(void *ptr) {
+static void kfree_unlocked(void *ptr) {
     if (!ptr) return;
     struct block *b = checked_header(ptr, "kfree");
     if (b->magic == MAGIC_LARGE) {
@@ -192,7 +192,7 @@ void kfree(void *ptr) {
     }
 }
 
-void *krealloc(void *ptr, size_t size) {
+static void * krealloc_unlocked(void *ptr, size_t size) {
     if (!ptr) return kmalloc(size);
     if (size == 0) { kfree(ptr); return NULL; }
     struct block *b = checked_header(ptr, "krealloc");
@@ -214,4 +214,29 @@ size_t heap_small_blocks(size_t *free_count) {
     }
     if (free_count) *free_count = f;
     return n;
+}
+
+// ---- locked public entry points ----
+void * kmalloc(size_t size) {
+    uint64_t f = mm_irq_save();
+    void * r = kmalloc_unlocked(size);
+    mm_irq_restore(f);
+    return r;
+}
+void * kcalloc(size_t n, size_t size) {
+    uint64_t f = mm_irq_save();
+    void * r = kcalloc_unlocked(n, size);
+    mm_irq_restore(f);
+    return r;
+}
+void kfree(void *ptr) {
+    uint64_t f = mm_irq_save();
+    kfree_unlocked(ptr);
+    mm_irq_restore(f);
+}
+void * krealloc(void *ptr, size_t size) {
+    uint64_t f = mm_irq_save();
+    void * r = krealloc_unlocked(ptr, size);
+    mm_irq_restore(f);
+    return r;
 }
