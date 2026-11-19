@@ -24,5 +24,6 @@ Roadmap and phase list: see PLAN.md. Work one phase at a time.
 - `-Werror` is on: fix warnings, don't silence them.
 - Layout: `kernel/arch/x86_64` (CPU-specific), `kernel/mm`, `kernel/drivers`, `kernel/gfx`, `kernel/wm`,
   `kernel/fs`, `kernel/proc`, `kernel/net`, `kernel/lib`, headers in `kernel/include`, user apps in `user/`.
-- Visual identity is original to myOS. Don't copy Apple/Microsoft assets or trade dress.
+- Look & feel: macOS-inspired (menu bar, frosted dock, traffic-light window buttons, rounded windows), with values in kernel/wm/theme.h.
+  Never ship Apple assets: no Apple logo, icons, wallpapers, SF fonts or Apple product names. Draw procedurally or use permissive sources (e.g. Inter, OFL).
 - One commit per finished phase (or meaningful step) with `make test` green.
