@@ -8,6 +8,8 @@
 #include "mm.h"
 #include "input.h"
 #include "desktop.h"
+#include "pci.h"
+#include "subsystems.h"
 
 void kmain(void) {
     serial_init();
@@ -20,7 +22,11 @@ void kmain(void) {
 
     arch_init();
     mm_init();
+    pci_init();
+    sched_init();
     input_init();
+    fs_init();
+    net_init();
     desktop_init();
 
     if (boot_is_test()) {

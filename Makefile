@@ -25,8 +25,14 @@ C_SRCS   := $(shell find kernel -name '*.c')
 ASM_SRCS := $(shell find kernel -name '*.asm')
 OBJS := $(patsubst %,$(BUILD)/%.o,$(C_SRCS) $(ASM_SRCS))
 
-QEMU_BASE := -M q35 -m 256M -no-reboot
-QEMU_TEST := $(QEMU_BASE) -display none -serial stdio \
+# Subsystems add devices/prereqs in their own mk/<name>.mk:
+#   QEMU_EXTRA += -nic ...      TEST_DEPS += build/disk.img
+QEMU_EXTRA :=
+TEST_DEPS  :=
+-include mk/*.mk
+
+QEMU_BASE = -M q35 -m 256M -no-reboot $(QEMU_EXTRA)
+QEMU_TEST = $(QEMU_BASE) -display none -serial stdio \
              -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 .PHONY: all run run-uefi test screenshot debug clean distclean deps
@@ -75,20 +81,20 @@ $(ISO_TEST): $(KERNEL) limine-test.conf $(LIMINE_DIR)/limine
 	$(call make_iso,limine-test.conf,$@)
 
 # Interactive window (BIOS boot)
-run: $(ISO)
+run: $(ISO) $(TEST_DEPS)
 	$(QEMU) $(QEMU_BASE) -cdrom $(ISO) -serial stdio
 
 # Interactive window (UEFI boot via OVMF)
-run-uefi: $(ISO)
+run-uefi: $(ISO) $(TEST_DEPS)
 	$(QEMU) $(QEMU_BASE) -drive if=pflash,unit=0,format=raw,file=$(OVMF),readonly=on \
 		-cdrom $(ISO) -serial stdio
 
 # Headless automated boot test: must print "[TEST] boot OK" and exit 33
-test: $(ISO_TEST)
+test: $(ISO_TEST) $(TEST_DEPS)
 	@QEMU="$(QEMU)" QEMU_ARGS="$(QEMU_TEST)" ISO="$(ISO_TEST)" OVMF="$(OVMF)" tests/boot_test.sh
 
 # Boot headless and save a PNG of the screen to build/screenshot.png
-screenshot: $(ISO)
+screenshot: $(ISO) $(TEST_DEPS)
 	@QEMU="$(QEMU)" QEMU_ARGS="$(QEMU_BASE)" ISO="$(ISO)" tests/screenshot.sh
 
 # Start paused with a GDB stub on :1234 and interrupt/reset logging

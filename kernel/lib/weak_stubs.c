@@ -13,6 +13,7 @@
 #include "boot.h"
 #include "string.h"
 #include "panic.h"
+#include "subsystems.h"
 
 #define WEAK __attribute__((weak))
 
@@ -74,3 +75,8 @@ WEAK void rtc_read(struct rtc_time *t) {
 WEAK void desktop_init(void) {}
 WEAK void desktop_frame(void) {}
 WEAK void desktop_run(void) { halt_forever(); }
+
+// ---- subsystems ----
+WEAK void sched_init(void) {}
+WEAK void fs_init(void) {}
+WEAK void net_init(void) {}
