@@ -27,8 +27,10 @@ OBJS := $(patsubst %,$(BUILD)/%.o,$(C_SRCS) $(ASM_SRCS))
 
 # Subsystems add devices/prereqs in their own mk/<name>.mk:
 #   QEMU_EXTRA += -nic ...      TEST_DEPS += build/disk.img
+#   ISO_EXTRA_FILES += build/initrd.tar   (copied to /boot/ in the ISO)
 QEMU_EXTRA :=
 TEST_DEPS  :=
+ISO_EXTRA_FILES :=
 -include mk/*.mk
 
 QEMU_BASE = -M q35 -m 256M -no-reboot $(QEMU_EXTRA)
@@ -66,6 +68,7 @@ define make_iso
 	cp $(LIMINE_DIR)/limine-bios.sys $(LIMINE_DIR)/limine-bios-cd.bin \
 	   $(LIMINE_DIR)/limine-uefi-cd.bin $(BUILD)/iso_root/boot/limine/
 	cp $(LIMINE_DIR)/BOOTX64.EFI $(BUILD)/iso_root/EFI/BOOT/
+	$(foreach f,$(ISO_EXTRA_FILES),cp $(f) $(BUILD)/iso_root/boot/;) true
 	xorriso -as mkisofs -R -r -J -b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
 		-apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
@@ -74,10 +77,10 @@ define make_iso
 	$(LIMINE_DIR)/limine bios-install $(2) 2>/dev/null
 endef
 
-$(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
+$(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine $(ISO_EXTRA_FILES)
 	$(call make_iso,limine.conf,$@)
 
-$(ISO_TEST): $(KERNEL) limine-test.conf $(LIMINE_DIR)/limine
+$(ISO_TEST): $(KERNEL) limine-test.conf $(LIMINE_DIR)/limine $(ISO_EXTRA_FILES)
 	$(call make_iso,limine-test.conf,$@)
 
 # Interactive window (BIOS boot)
