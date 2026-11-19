@@ -91,7 +91,8 @@ struct rect cursor_rect(int x, int y);
 
 // ---- apps (kernel/apps) ----
 // Apps with client_w == 0 are dock placeholders (shown as "coming soon").
-extern struct app app_welcome, app_notes;
+extern struct app app_welcome, app_notes, app_clock;
 // Shared icon glyph painters (shell.c)
 extern void (*const icon_glyph_welcome)(struct surface *, struct rect);
 extern void (*const icon_glyph_notes)(struct surface *, struct rect);
+extern void (*const icon_glyph_clock)(struct surface *, struct rect);

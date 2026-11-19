@@ -40,7 +40,7 @@ else
 QEMU_DISPLAY :=
 endif
 
-QEMU_BASE = -M q35 -m 256M -no-reboot $(QEMU_EXTRA)
+QEMU_BASE = -M q35 -m 256M -no-reboot -rtc base=localtime $(QEMU_EXTRA)
 QEMU_TEST = $(QEMU_BASE) -display none -serial stdio \
              -device isa-debug-exit,iobase=0xf4,iosize=0x04
 

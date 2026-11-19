@@ -18,7 +18,7 @@
 | 8 | Multitarea: hilos y scheduler | ✅ Hecha |
 | 9 | Userspace: ring 3, syscalls, ELF | ✅ Hecha |
 | 10 | Sistema de archivos: VFS, initrd, AHCI, FAT32 | ✅ Hecha |
-| 11 | Apps: Terminal, Archivos, Editor, Reloj, Ajustes | ⏳ Pendiente (se hará después de ver el escritorio) |
+| 11 | Apps: Terminal, Archivos, Editor, Reloj, Ajustes | 🔄 Reloj hecho; el resto, pendiente |
 | 12 | Red: e1000, TCP/IP, DHCP, DNS, HTTP | ✅ Hecha |
 | 13 | TLS + navegador | ⏳ Pendiente |
 | 14 | Pulido: apagado ACPI, animaciones, rendimiento | ⏳ Pendiente |
@@ -31,6 +31,21 @@
 | **v0.1, primer escritorio usable (fases 0–7)** | **100 %**: integrada y funcionando en QEMU |
 | **Plan completo (16 fases)** | **~75 %**: 12 fases cerradas (0–10 y 12) más PCI |
 | Plan completo, ponderado por esfuerzo | **~68 %**: quedan apps, HTTPS y navegador, pulido y port a ARM |
+
+## Tiempo de arranque
+
+Desde que se lanza QEMU hasta que el escritorio está listo pasan **unos 2,8 s** en un Mac M3 emulando x86_64:
+
+| Momento | Hito |
+|---|---|
+| 0,8 s | Firmware y Limine terminan; el kernel imprime `myOS booting...` |
+| 0,85 s | CPU, interrupciones y memoria listos |
+| 1,1 s | Multitarea, ring 3, teclado y ratón listos |
+| 1,4 s | Disco FAT32 montado y verificado |
+| 2,7 s | Red: DHCP, ping, DNS y descarga HTTP de prueba |
+| 2,8 s | Escritorio visible |
+
+Casi la mitad del tiempo se va en los autotests de red, que salen a Internet. Se pueden limitar al modo test para que el arranque normal baje a 1,5 s.
 
 ## Tamaño del código
 

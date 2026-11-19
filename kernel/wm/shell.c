@@ -143,8 +143,6 @@ static struct app ph_files = { .name = "Files", .icon_top = RGB(0x6c, 0xcf, 0xff
     .icon_bottom = RGB(0x0a, 0x7a, 0xff), .icon_glyph = glyph_files };
 static struct app ph_terminal = { .name = "Terminal", .icon_top = RGB(0x5a, 0x5a, 0x60),
     .icon_bottom = RGB(0x1c, 0x1c, 0x1e), .icon_glyph = glyph_terminal };
-static struct app ph_clock = { .name = "Clock", .icon_top = RGB(0x3a, 0x3a, 0x3e),
-    .icon_bottom = RGB(0x12, 0x12, 0x14), .icon_glyph = glyph_clock };
 static struct app ph_browser = { .name = "Browser", .icon_top = RGB(0x5e, 0xe0, 0xf6),
     .icon_bottom = RGB(0x1a, 0x6c, 0xf0), .icon_glyph = glyph_browser };
 static struct app ph_settings = { .name = "Settings", .icon_top = RGB(0xa8, 0xa8, 0xae),
@@ -154,9 +152,10 @@ static struct app ph_trash = { .name = "Trash", .icon_top = RGB(0xb4, 0xb4, 0xba
 
 void (*const icon_glyph_welcome)(struct surface *, struct rect) = glyph_welcome;
 void (*const icon_glyph_notes)(struct surface *, struct rect) = glyph_notes;
+void (*const icon_glyph_clock)(struct surface *, struct rect) = glyph_clock;
 
 static struct app *dock_apps[] = {
-    &ph_files, &ph_terminal, &app_notes, &ph_clock, &ph_browser, &ph_settings, &app_welcome, &ph_trash,
+    &ph_files, &ph_terminal, &app_notes, &app_clock, &ph_browser, &ph_settings, &app_welcome, &ph_trash,
 };
 #define NDOCK ((int)(sizeof dock_apps / sizeof dock_apps[0]))
 #define DOCK_SEP_BEFORE (NDOCK - 1)     // thin separator before the trash

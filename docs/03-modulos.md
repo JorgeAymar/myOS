@@ -100,7 +100,12 @@ Todas las llamadas bloqueantes tienen tiempo límite y no dependen del scheduler
 - **Barra de menú (24 px):** logo propio de myOS (un planeta con órbita), con menú desplegable; el nombre de la app activa; los menús File, Edit, View, Window y Help; y a la derecha, iconos de Wi-Fi y batería y la fecha y hora del RTC.
 - **Dock:** flotante y translúcido, con 8 iconos dibujados por código, **efecto lupa** al pasar el ratón, etiqueta con el nombre, punto bajo las apps abiertas y separador antes de la papelera.
 - **Ventanas:** esquinas de 10 px, sombra suave, borde de 1 px y barra de título de 28 px con el título centrado. Los **botones de semáforo** (cerrar, minimizar, zoom) muestran sus símbolos al pasar el ratón y se vuelven grises en las ventanas inactivas. Se pueden enfocar, arrastrar, cerrar, minimizar y restaurar desde el dock.
-- **Apps de ejemplo:** *Welcome*, con el tiempo encendido y el botón *Get Started*, y *Notes*.
+- **Apps:** *Welcome* (con el tiempo encendido y el botón *Get Started*), *Notes* y **Clock**.
+  - Clock tiene esfera analógica con 60 marcas y números del 1 al 12, y agujas de hora, minuto y segundero naranja dibujadas con trigonometría entera (`gfx_sin1024`).
+  - Muestra también la hora digital en Inter 24 px y la fecha completa.
+  - Se redibuja una vez por segundo con el `tick` del escritorio. QEMU arranca con `-rtc base=localtime`, así que muestra la hora local del Mac.
+
+![App Clock](img/clock-app.png)
 - Todos los colores y medidas están en `kernel/wm/theme.h`, que incluye también una paleta oscura para el futuro. No se usa nada de Apple: el logo, los iconos y el wallpaper son propios.
 
 ## Log de un arranque completo (modo test)
