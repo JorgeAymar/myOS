@@ -11,6 +11,8 @@ Esta carpeta explica cómo se está construyendo myOS: qué se decidió, cómo e
 | 5 | [Metodología multi-agente](05-metodologia-multiagente.md) | Cómo se reparte el trabajo entre agentes de Claude Code |
 | 6 | [Estado y avance](06-estado-y-avance.md) | Qué está hecho, qué está en curso y el porcentaje de avance |
 
+**Presentación:** [`myOS-arquitectura.pptx`](myOS-arquitectura.pptx), 15 diapositivas con la arquitectura y los pasos de construcción, y notas del orador en cada una. Se genera con `tools/build_deck.js` (pptxgenjs).
+
 Hay una versión PDF de cada documento en [`pdf/`](pdf/), además de un PDF único con todo: [`pdf/myOS-documentacion.pdf`](pdf/myOS-documentacion.pdf).
 
 ![Escritorio de myOS v0.1](img/desktop-v0.1-macos.png)
