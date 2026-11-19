@@ -7,7 +7,7 @@ CSS="../tools/docs.css"
 OUT="pdf"
 mkdir -p "$OUT"
 
-DOCS=(01-vision-y-estrategia 02-arquitectura 03-modulos 04-build-y-tests 05-metodologia-multiagente 06-estado-y-avance)
+DOCS=(01-vision-y-estrategia 02-arquitectura 03-modulos 04-build-y-tests 05-metodologia-multiagente 06-estado-y-avance 07-qa)
 
 render() {  # render <html-in> <pdf-out>
     weasyprint -s "$CSS" --base-url "$PWD/" "$1" "$2" 2>/dev/null
