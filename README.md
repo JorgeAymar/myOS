@@ -2,11 +2,13 @@
 
 *[Leer en español](README.es.md)*
 
+![myOS desktop](docs/img/desktop-v0.1-macos.png)
+
 A hobby operating system written from scratch in **C and assembly** for **x86_64**, booted by [Limine](https://github.com/limine-bootloader/limine) and run in **QEMU**. There is no Linux underneath, no external libraries and no prebuilt kernel: every layer, from boot and interrupts through memory, drivers, graphics and windows to the apps, is written in this repository.
 
 The project is built with [Claude Code](https://claude.com/claude-code). Work moves in small phases, each with automated verification, and several agents work in parallel against well-defined module contracts.
 
-> **Status:** early development (v0.1). Boots on BIOS and UEFI, with serial logging and a headless test harness. Memory management (PMM, paging, heap) and the PS/2 keyboard, mouse and RTC drivers are merged. CPU/interrupt setup and the desktop UI are being integrated.
+> **Status:** v0.1 desktop is running. Boots on BIOS and UEFI with a macOS-inspired desktop (menu bar, frosted dock, windows with traffic-light buttons, Inter font), preemptive multitasking, ring 3 processes with syscalls, PS/2 keyboard and mouse, and a TCP/IP stack (DHCP, DNS, HTTP). The filesystem (AHCI + FAT32) is in progress. See [docs/](docs/) for the full documentation (Spanish, Markdown + PDF).
 
 ## Features (v0.1 target)
 
@@ -14,10 +16,13 @@ The project is built with [Claude Code](https://claude.com/claude-code). Work mo
 - [x] Higher-half kernel, `kprintf`, `panic`, serial console
 - [x] Physical memory manager (bitmap), 4-level paging, kernel heap with corruption checks
 - [x] PS/2 keyboard (US layout, extended keys, modifiers), PS/2 mouse with scroll wheel, RTC clock
-- [ ] GDT/TSS, IDT, exceptions with register dumps, PIC, 1000 Hz PIT timer
-- [ ] Double-buffered compositor that only redraws the parts of the screen that changed
-- [ ] Original myOS desktop: top bar, dock, draggable windows
-- [ ] Apps: Terminal with a shell, About myOS, Clock
+- [x] GDT/TSS, IDT, exceptions with register dumps, PIC, 1000 Hz PIT timer
+- [x] Double-buffered compositor that only redraws the parts of the screen that changed
+- [x] macOS-inspired desktop: menu bar, frosted dock with magnification, draggable windows
+- [x] Preemptive multitasking, mutexes, semaphores; ring 3 processes, syscalls, ELF loader
+- [x] PCI, e1000 NIC, TCP/IP stack: ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, HTTP
+- [ ] Filesystem: VFS, initrd, AHCI, FAT32
+- [ ] Apps: Terminal with a shell, Files, Clock, Settings
 
 ## Requirements (macOS, Apple Silicon or Intel)
 
