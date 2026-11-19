@@ -1,72 +1,87 @@
 # myOS
 
-Un sistema operativo hobby escrito desde cero en **C y ensamblador** para **x86_64**, arrancado con [Limine](https://github.com/limine-bootloader/limine) y ejecutado en **QEMU**. No usa Linux, ni librerías externas, ni un kernel prefabricado: cada capa (arranque, interrupciones, memoria, drivers, gráficos, ventanas y apps) se escribe en este repo.
+*[Leer en español](README.es.md)*
 
-El proyecto se desarrolla con [Claude Code](https://claude.com/claude-code). Se avanza por fases pequeñas, cada una con verificación automática, y se usan varios agentes en paralelo que trabajan contra contratos de módulos bien definidos.
+A hobby operating system written from scratch in **C and assembly** for **x86_64**, booted by [Limine](https://github.com/limine-bootloader/limine) and run in **QEMU**. There is no Linux underneath, no external libraries and no prebuilt kernel: every layer, from boot and interrupts through memory, drivers, graphics and windows to the apps, is written in this repository.
 
-> **Estado:** en desarrollo temprano (v0.1). Arranca en BIOS y UEFI, tiene salida por serie, un framework de tests sin pantalla, y los contratos de los módulos ya definidos. Se están integrando interrupciones, memoria, input y el escritorio.
+The project is built with [Claude Code](https://claude.com/claude-code). Work moves in small phases, each with automated verification, and several agents work in parallel against well-defined module contracts.
 
-## Características (objetivo v0.1)
+> **Status:** early development (v0.1). Boots on BIOS and UEFI, with serial logging and a headless test harness. Memory management (PMM, paging, heap) and the PS/2 keyboard, mouse and RTC drivers are merged. CPU/interrupt setup and the desktop UI are being integrated.
 
-- Arranque con Limine en BIOS y UEFI desde una ISO híbrida
-- Kernel en la mitad alta de memoria (higher half), con GDT/TSS, IDT, volcado de registros en excepciones, PIC y timer PIT a 1000 Hz
-- Gestor de memoria física, paginación de 4 niveles y heap del kernel
-- Teclado y ratón PS/2 (con rueda) y reloj RTC
-- Compositor con doble buffer y redibujado solo de las zonas que cambian
-- Escritorio propio de myOS: barra superior, dock y ventanas arrastrables
-- Apps: Terminal con shell, Acerca de myOS y Reloj
+## Features (v0.1 target)
 
-## Requisitos (macOS con Apple Silicon o Intel)
+- [x] Limine boot on BIOS and UEFI from a hybrid ISO
+- [x] Higher-half kernel, `kprintf`, `panic`, serial console
+- [x] Physical memory manager (bitmap), 4-level paging, kernel heap with corruption checks
+- [x] PS/2 keyboard (US layout, extended keys, modifiers), PS/2 mouse with scroll wheel, RTC clock
+- [ ] GDT/TSS, IDT, exceptions with register dumps, PIC, 1000 Hz PIT timer
+- [ ] Double-buffered compositor that only redraws the parts of the screen that changed
+- [ ] Original myOS desktop: top bar, dock, draggable windows
+- [ ] Apps: Terminal with a shell, About myOS, Clock
+
+## Requirements (macOS, Apple Silicon or Intel)
 
 ```bash
 brew install qemu nasm xorriso x86_64-elf-gcc x86_64-elf-binutils
 ```
 
-El binario de Limine (rama `v9.x-binary`) se descarga solo en el primer `make`.
+The Limine binaries (branch `v9.x-binary`) are fetched automatically on the first `make`.
 
-> En un Mac con Apple Silicon, VirtualBox **no** puede ejecutar un OS x86. myOS corre en QEMU, que emula x86_64.
+> On Apple Silicon, VirtualBox **cannot** run an x86 OS. myOS targets QEMU, which emulates x86_64.
 
-## Uso
+## Usage
 
-| Comando | Qué hace |
+| Command | What it does |
 |---|---|
-| `make` | Compila `build/myos.iso` |
-| `make run` | Abre myOS en una ventana de QEMU (BIOS), con el log serie en la terminal |
-| `make run-uefi` | Igual, pero arranca con firmware UEFI (OVMF) |
-| `make test` | Test sin pantalla en BIOS y UEFI; debe mostrar `PASS [bios]` y `PASS [uefi]` |
-| `make screenshot` | Arranca sin pantalla y guarda `build/screenshot.png` (`WAIT=8` para esperar más) |
-| `make debug` | Arranca en pausa con GDB en `:1234` y registra interrupciones y reinicios |
-| `make clean` / `make distclean` | Borra `build/` (y `distclean` también `limine/`) |
+| `make` | Builds `build/myos.iso` |
+| `make run` | Opens myOS in a QEMU window (BIOS boot), serial log in the terminal |
+| `make run-uefi` | Same, but boots with UEFI firmware (OVMF) |
+| `make test` | Headless boot test on BIOS and UEFI; should print `PASS [bios]` and `PASS [uefi]` |
+| `make screenshot` | Boots headless and saves `build/screenshot.png` (`WAIT=8` to wait longer) |
+| `make debug` | Starts paused with a GDB stub on `:1234` and interrupt/reset logging |
+| `make clean` / `make distclean` | Removes `build/` (`distclean` also removes `limine/`) |
 
-### Cómo funcionan los tests
+### How the tests work
 
-`make test` arranca una ISO aparte con `cmdline: test`. En ese modo el kernel ejecuta sus autotests, pinta unos cuantos frames del escritorio, escribe `[TEST] boot OK` por el puerto serie y apaga QEMU a través del dispositivo `isa-debug-exit`. El test pasa solo si QEMU termina con el código de salida esperado y el log contiene esa línea. Cada subsistema escribe su propia línea `[OK] ...` o detiene el arranque con `panic()`. Los logs quedan en `build/serial-*.log`.
+`make test` boots a separate ISO whose kernel command line is `test`. In that mode the kernel runs its self-tests, renders a few desktop frames, prints `[TEST] boot OK` to the serial port and shuts QEMU down through the `isa-debug-exit` device. A run passes only if QEMU exits with the expected status code and the log contains that line. Each subsystem prints its own `[OK] ...` line or stops the boot with `panic()`. Logs are written to `build/serial-*.log`.
 
-## Estructura
+Sample output from a passing run:
+
+```
+myOS booting...
+[OK] boot framebuffer 1280x800x32 cmdline='test'
+[OK] mm total=238 MiB free=238 MiB
+[OK] heap range=0xffffc00000000000..0xffffc11000000000
+[OK] input ps2 kbd=yes mouse=yes wheel=yes
+[OK] rtc 2026-11-19 01:51:29
+[TEST] boot OK
+```
+
+## Project layout
 
 ```
 kernel/
-├── main.c            # kmain: orquesta la inicialización (fino a propósito)
-├── boot.c            # peticiones a Limine (framebuffer, memmap, HHDM, cmdline)
-├── linker.ld         # kernel en 0xffffffff80000000
-├── include/          # contratos entre módulos: arch.h, mm.h, input.h, rtc.h, desktop.h...
-├── lib/              # kprintf, string, panic, weak_stubs (implementaciones de reserva)
-├── arch/x86_64/      # GDT, IDT, ISR, PIC, PIT
+├── main.c            # kmain: brings up each subsystem in order (thin on purpose)
+├── boot.c            # Limine requests (framebuffer, memmap, HHDM, cmdline)
+├── linker.ld         # kernel linked at 0xffffffff80000000
+├── include/          # module contracts: arch.h, mm.h, input.h, rtc.h, desktop.h...
+├── lib/              # kprintf, string, panic, weak_stubs (fallback implementations)
+├── arch/x86_64/      # GDT, IDT, ISRs, PIC, PIT
 ├── mm/               # PMM, VMM, heap
-├── drivers/          # serie, PS/2, RTC
-├── gfx/ wm/ apps/    # gráficos, gestor de ventanas, escritorio y apps
+├── drivers/          # serial, PS/2 keyboard and mouse, RTC
+├── gfx/ wm/ apps/    # graphics, window manager, desktop and apps
 tests/                # boot_test.sh, screenshot.sh
-limine.conf           # entrada normal
-limine-test.conf      # entrada de test (cmdline: test)
+limine.conf           # normal boot entry
+limine-test.conf      # test boot entry (cmdline: test)
 ```
 
-Cada módulo implementa las funciones de su header en `kernel/include/`. `kernel/lib/weak_stubs.c` tiene versiones mínimas ("débiles") de todas esas funciones, así que cada módulo compila y se prueba por separado. Al enlazar, la implementación real sustituye siempre a la de reserva.
+Each module implements the functions declared in its header under `kernel/include/`. `kernel/lib/weak_stubs.c` provides minimal "weak" fallback versions of all of them, so any module can be built and tested on its own. When linking, the real implementation always replaces the fallback.
 
-## Hoja de ruta
+## Roadmap
 
-El plan completo, de la fase 0 a la 15 (multitarea, userspace en ring 3, FAT32, red TCP/IP, HTTPS y port a aarch64), está en [PLAN.md](PLAN.md). Las reglas de trabajo para agentes están en [CLAUDE.md](CLAUDE.md).
+The full plan, phases 0 to 15 (multitasking, ring 3 userspace, FAT32, TCP/IP networking, HTTPS and an aarch64 port), is in [PLAN.md](PLAN.md) (in Spanish). The working rules for coding agents are in [CLAUDE.md](CLAUDE.md).
 
-## Créditos
+## Credits
 
-- [Limine](https://github.com/limine-bootloader/limine): bootloader y `limine.h` (protocolo Limine)
-- Inspirado por el experimento "I Forced AI to Build a Custom Operating System" (The Render Guy), que creó AuroraOS
+- [Limine](https://github.com/limine-bootloader/limine): bootloader and `limine.h` (Limine boot protocol)
+- Inspired by the experiment "I Forced AI to Build a Custom Operating System" by The Render Guy, which produced AuroraOS
