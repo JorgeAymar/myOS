@@ -26,6 +26,12 @@ extern const uint64_t isr_stub_table[256];
 
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static irq_handler_t irq_handlers[16];
+static irq_exit_hook_t irq_exit_hook;
+
+void arch_set_irq_exit_hook(irq_exit_hook_t hook) { irq_exit_hook = hook; }
+
+static user_fault_hook_t user_fault_hook;
+void arch_set_user_fault_hook(user_fault_hook_t hook) { user_fault_hook = hook; }
 
 static const char *const exception_names[32] = {
     "Divide Error (#DE)", "Debug (#DB)", "Non-Maskable Interrupt (NMI)",
@@ -111,6 +117,11 @@ void interrupt_dispatch(struct interrupt_frame *f) {
             kprintf("[arch] breakpoint at RIP=0x%016lx\n", f->rip);
             return;
         }
+        if ((f->cs & 3) && user_fault_hook) {
+            kprintf("[arch] user exception %lu (%s) at RIP=0x%016lx error=0x%lx\n",
+                    vec, exception_names[vec], f->rip, f->error_code);
+            user_fault_hook(vec, f->rip, f->error_code);   // normally kills the thread
+        }
         dump_exception(f);
         panic("CPU exception %lu (%s) at RIP=0x%016lx",
               vec, exception_names[vec], f->rip);
@@ -121,6 +132,7 @@ void interrupt_dispatch(struct interrupt_frame *f) {
         if (pic_is_spurious(irq)) return;
         if (irq_handlers[irq]) irq_handlers[irq]();
         pic_send_eoi(irq);
+        if (irq_exit_hook) irq_exit_hook(irq);   // may switch threads
         return;
     }
 

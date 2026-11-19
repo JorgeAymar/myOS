@@ -1,6 +1,7 @@
 // GDT with kernel/user segments and a TSS (IST stacks for #DF and NMI).
 #include <stdint.h>
 #include "interrupt.h"
+#include "arch.h"
 
 struct __attribute__((packed)) tss {
     uint32_t reserved0;
@@ -75,3 +76,5 @@ void gdt_init(void) {
           [tss] "i"(GDT_TSS)
         : "rax", "memory");
 }
+
+void arch_set_kernel_stack(uint64_t rsp0) { tss.rsp[0] = rsp0; }

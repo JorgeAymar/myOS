@@ -23,7 +23,11 @@ void pit_init(void) {
 
 uint64_t timer_ticks_ms(void) { return ticks_ms; }
 
+static sleep_hook_t sleep_hook;
+void timer_set_sleep_hook(sleep_hook_t hook) { sleep_hook = hook; }
+
 void timer_sleep_ms(uint64_t ms) {
+    if (sleep_hook) { sleep_hook(ms); return; }
     uint64_t deadline = ticks_ms + ms;
     // "sti; hlt" back to back: no IRQ can slip in between and be missed.
     while (ticks_ms < deadline) __asm__ volatile ("sti; hlt" ::: "memory");
