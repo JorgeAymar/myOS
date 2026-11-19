@@ -1,0 +1,9 @@
+myOS file system layout
+
+The kernel VFS resolves absolute paths through a mount table:
+
+  /       initrd, a USTAR archive handed over by the bootloader (read-only)
+  /disk   FAT32 on the first AHCI SATA disk (read-write, long file names)
+
+Kernel code uses vfs_open / vfs_read / vfs_write / vfs_readdir (see
+kernel/include/vfs.h).
