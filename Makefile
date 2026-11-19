@@ -7,6 +7,7 @@ NASM    := nasm
 QEMU    := qemu-system-x86_64
 BUILD   := build
 ISO     := $(BUILD)/myos.iso
+ISO_TEST := $(BUILD)/myos-test.iso
 KERNEL  := $(BUILD)/kernel.elf
 LIMINE_DIR    := limine
 LIMINE_BRANCH := v9.x-binary
@@ -50,11 +51,12 @@ $(BUILD)/%.asm.o: %.asm
 $(KERNEL): $(OBJS) kernel/linker.ld
 	$(LD) $(LDFLAGS) $(OBJS) -o $@
 
-$(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
+# make_iso(conf, output)
+define make_iso
 	rm -rf $(BUILD)/iso_root
 	mkdir -p $(BUILD)/iso_root/boot/limine $(BUILD)/iso_root/EFI/BOOT
 	cp $(KERNEL) $(BUILD)/iso_root/boot/kernel.elf
-	cp limine.conf $(BUILD)/iso_root/boot/limine/
+	cp $(1) $(BUILD)/iso_root/boot/limine/limine.conf
 	cp $(LIMINE_DIR)/limine-bios.sys $(LIMINE_DIR)/limine-bios-cd.bin \
 	   $(LIMINE_DIR)/limine-uefi-cd.bin $(BUILD)/iso_root/boot/limine/
 	cp $(LIMINE_DIR)/BOOTX64.EFI $(BUILD)/iso_root/EFI/BOOT/
@@ -62,8 +64,15 @@ $(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
 		-no-emul-boot -boot-load-size 4 -boot-info-table -hfsplus \
 		-apm-block-size 2048 --efi-boot boot/limine/limine-uefi-cd.bin \
 		-efi-boot-part --efi-boot-image --protective-msdos-label \
-		$(BUILD)/iso_root -o $@ 2>/dev/null
-	$(LIMINE_DIR)/limine bios-install $@ 2>/dev/null
+		$(BUILD)/iso_root -o $(2) 2>/dev/null
+	$(LIMINE_DIR)/limine bios-install $(2) 2>/dev/null
+endef
+
+$(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
+	$(call make_iso,limine.conf,$@)
+
+$(ISO_TEST): $(KERNEL) limine-test.conf $(LIMINE_DIR)/limine
+	$(call make_iso,limine-test.conf,$@)
 
 # Interactive window (BIOS boot)
 run: $(ISO)
@@ -75,8 +84,8 @@ run-uefi: $(ISO)
 		-cdrom $(ISO) -serial stdio
 
 # Headless automated boot test: must print "[TEST] boot OK" and exit 33
-test: $(ISO)
-	@QEMU="$(QEMU)" QEMU_ARGS="$(QEMU_TEST)" ISO="$(ISO)" OVMF="$(OVMF)" tests/boot_test.sh
+test: $(ISO_TEST)
+	@QEMU="$(QEMU)" QEMU_ARGS="$(QEMU_TEST)" ISO="$(ISO_TEST)" OVMF="$(OVMF)" tests/boot_test.sh
 
 # Boot headless and save a PNG of the screen to build/screenshot.png
 screenshot: $(ISO)
