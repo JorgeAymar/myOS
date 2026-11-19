@@ -44,7 +44,7 @@ QEMU_BASE = -M q35 -m 256M -no-reboot -rtc base=localtime $(QEMU_EXTRA)
 QEMU_TEST = $(QEMU_BASE) -display none -serial stdio \
              -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
-.PHONY: all run run-uefi test screenshot debug clean distclean deps
+.PHONY: all run run-uefi test screenshot debug clean distclean deps qa
 
 all: $(ISO)
 
@@ -106,6 +106,11 @@ test: $(ISO_TEST) $(TEST_DEPS)
 # Boot headless and save a PNG of the screen to build/screenshot.png
 screenshot: $(ISO) $(TEST_DEPS)
 	@QEMU="$(QEMU)" QEMU_ARGS="$(QEMU_BASE)" ISO="$(ISO)" tests/screenshot.sh
+
+# Interactive UI QA: drives the desktop with real PS/2 events over QMP,
+# screenshots each step into build/qa/
+qa: $(ISO) build/disk.img
+	python3 -I tools/qa_ui.py
 
 # Start paused with a GDB stub on :1234 and interrupt/reset logging
 debug: $(ISO)

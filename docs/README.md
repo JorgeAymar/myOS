@@ -10,6 +10,7 @@ Esta carpeta explica cómo se está construyendo myOS: qué se decidió, cómo e
 | 4 | [Build, tests y depuración](04-build-y-tests.md) | Toolchain, Makefile, tests automáticos y capturas |
 | 5 | [Metodología multi-agente](05-metodologia-multiagente.md) | Cómo se reparte el trabajo entre agentes de Claude Code |
 | 6 | [Estado y avance](06-estado-y-avance.md) | Qué está hecho, qué está en curso y el porcentaje de avance |
+| 7 | [Informe de QA](07-qa.md) | Pruebas de interfaz con ratón y teclado reales, build limpio y deuda conocida |
 
 **Presentación:** [`myOS-arquitectura.pptx`](myOS-arquitectura.pptx), 15 diapositivas con la arquitectura y los pasos de construcción, y notas del orador en cada una. Se genera con `tools/build_deck.js` (pptxgenjs).
 

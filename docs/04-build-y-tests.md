@@ -26,6 +26,7 @@ Opciones del kernel: `-ffreestanding -mcmodel=kernel -mno-red-zone -mno-sse -mno
 | `make test` | Test automático sin pantalla en BIOS **y** UEFI |
 | `make screenshot` | Captura PNG del escritorio en `build/screenshot.png` |
 | `make disk` | Regenera `build/disk.img` desde cero |
+| `make qa` | QA de interfaz: maneja el escritorio con eventos PS/2 reales por QMP y guarda capturas en `build/qa/` |
 | `make debug` | Arranca en pausa con GDB en `:1234` y registra interrupciones y reinicios |
 
 ## Protocolo de tests
