@@ -31,6 +31,13 @@ QEMU_EXTRA :=
 TEST_DEPS  :=
 -include mk/*.mk
 
+# Interactive window: on macOS scale the guest screen when the window is resized.
+ifeq ($(shell uname -s),Darwin)
+QEMU_DISPLAY := -display cocoa,zoom-to-fit=on
+else
+QEMU_DISPLAY :=
+endif
+
 QEMU_BASE = -M q35 -m 256M -no-reboot $(QEMU_EXTRA)
 QEMU_TEST = $(QEMU_BASE) -display none -serial stdio \
              -device isa-debug-exit,iobase=0xf4,iosize=0x04
@@ -82,11 +89,11 @@ $(ISO_TEST): $(KERNEL) limine-test.conf $(LIMINE_DIR)/limine
 
 # Interactive window (BIOS boot)
 run: $(ISO) $(TEST_DEPS)
-	$(QEMU) $(QEMU_BASE) -cdrom $(ISO) -serial stdio
+	$(QEMU) $(QEMU_BASE) $(QEMU_DISPLAY) -cdrom $(ISO) -serial stdio
 
 # Interactive window (UEFI boot via OVMF)
 run-uefi: $(ISO) $(TEST_DEPS)
-	$(QEMU) $(QEMU_BASE) -drive if=pflash,unit=0,format=raw,file=$(OVMF),readonly=on \
+	$(QEMU) $(QEMU_BASE) $(QEMU_DISPLAY) -drive if=pflash,unit=0,format=raw,file=$(OVMF),readonly=on \
 		-cdrom $(ISO) -serial stdio
 
 # Headless automated boot test: must print "[TEST] boot OK" and exit 33
