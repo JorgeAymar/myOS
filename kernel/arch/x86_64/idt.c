@@ -26,6 +26,9 @@ extern const uint64_t isr_stub_table[256];
 
 static struct idt_entry idt[256] __attribute__((aligned(16)));
 static irq_handler_t irq_handlers[16];
+static irq_exit_hook_t irq_exit_hook;
+
+void arch_set_irq_exit_hook(irq_exit_hook_t hook) { irq_exit_hook = hook; }
 
 static const char *const exception_names[32] = {
     "Divide Error (#DE)", "Debug (#DB)", "Non-Maskable Interrupt (NMI)",
@@ -121,6 +124,7 @@ void interrupt_dispatch(struct interrupt_frame *f) {
         if (pic_is_spurious(irq)) return;
         if (irq_handlers[irq]) irq_handlers[irq]();
         pic_send_eoi(irq);
+        if (irq_exit_hook) irq_exit_hook(irq);   // may switch threads
         return;
     }
 
