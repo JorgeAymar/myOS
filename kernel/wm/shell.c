@@ -41,6 +41,17 @@ static void glyph_notes(struct surface *s, struct rect r) {
                   RGB(0xc8, 0xa2, 0x2c));
 }
 
+static void glyph_editor(struct surface *s, struct rect r) {
+    int z = r.w;
+    struct rect p = { r.x + z * 24 / 100, r.y + z * 16 / 100, z * 52 / 100, z * 68 / 100 };
+    gfx_fill_rrect(s, p, z * 6 / 100, RGBA(0xff, 0xff, 0xff, 0xf0));
+    for (int i = 0; i < 4; i++)
+        gfx_hline(s, p.x + z * 8 / 100, p.y + z * (16 + i * 14) / 100, p.w - z * 16 / 100 - (i == 3 ? z * 18 / 100 : 0),
+                  RGB(0x8e, 0x8e, 0x93));
+    int u = r.w, th = u / 5 > 4 ? u / 5 : 4;
+    gfx_capsule(s, GX(104), GY(88), GX(128), GY(64), th, RGB(0xff, 0x9f, 0x0a));
+}
+
 static void glyph_clock(struct surface *s, struct rect r) {
     int u = r.w, cx = GX(80), cy = GY(80);
     gfx_disc(s, cx, cy, u * 6, WHITE);
@@ -139,23 +150,22 @@ void app_icon_paint(struct surface *s, struct rect r, const struct app *a) {
 }
 
 // Placeholders until the real apps land (client_w == 0: not openable).
-static struct app ph_files = { .name = "Files", .icon_top = RGB(0x6c, 0xcf, 0xff),
-    .icon_bottom = RGB(0x0a, 0x7a, 0xff), .icon_glyph = glyph_files };
-static struct app ph_terminal = { .name = "Terminal", .icon_top = RGB(0x5a, 0x5a, 0x60),
-    .icon_bottom = RGB(0x1c, 0x1c, 0x1e), .icon_glyph = glyph_terminal };
 static struct app ph_browser = { .name = "Browser", .icon_top = RGB(0x5e, 0xe0, 0xf6),
     .icon_bottom = RGB(0x1a, 0x6c, 0xf0), .icon_glyph = glyph_browser };
-static struct app ph_settings = { .name = "Settings", .icon_top = RGB(0xa8, 0xa8, 0xae),
-    .icon_bottom = RGB(0x5e, 0x5e, 0x64), .icon_glyph = glyph_settings };
 static struct app ph_trash = { .name = "Trash", .icon_top = RGB(0xb4, 0xb4, 0xba),
     .icon_bottom = RGB(0x78, 0x78, 0x7e), .icon_glyph = glyph_trash };
 
 void (*const icon_glyph_welcome)(struct surface *, struct rect) = glyph_welcome;
 void (*const icon_glyph_notes)(struct surface *, struct rect) = glyph_notes;
 void (*const icon_glyph_clock)(struct surface *, struct rect) = glyph_clock;
+void (*const icon_glyph_files)(struct surface *, struct rect) = glyph_files;
+void (*const icon_glyph_terminal)(struct surface *, struct rect) = glyph_terminal;
+void (*const icon_glyph_editor)(struct surface *, struct rect) = glyph_editor;
+void (*const icon_glyph_settings)(struct surface *, struct rect) = glyph_settings;
+void (*const icon_glyph_info)(struct surface *, struct rect) = glyph_info;
 
 static struct app *dock_apps[] = {
-    &ph_files, &ph_terminal, &app_notes, &app_clock, &ph_browser, &ph_settings, &app_welcome, &ph_trash,
+    &app_files, &app_terminal, &app_editor, &app_notes, &app_clock, &ph_browser, &app_settings, &app_welcome, &ph_trash,
 };
 #define NDOCK ((int)(sizeof dock_apps / sizeof dock_apps[0]))
 #define DOCK_SEP_BEFORE (NDOCK - 1)     // thin separator before the trash
@@ -167,14 +177,34 @@ static int dock_mouse_x = -1;           // magnification focus, -1 = none
 static struct rect dock_icons[NDOCK];   // current layout
 static struct rect dock_panel;
 static int dock_sep_x;
-static bool menu_open;
+static int menu_open = -1;              // index into menus[], -1 = closed
 static int menu_hover = -1;
 static char clock_text[40];
 static struct rect clock_drawn;
 
-static const char *const menu_items[] = { "About myOS", "", "Minimize All", "Close All Windows" };
-#define NMENU 4
-static const char *const menu_titles[] = { "File", "Edit", "View", "Window", "Help" };
+enum { A_NONE, A_ABOUT, A_MIN, A_MINALL, A_CLOSE, A_CLOSEALL, A_FILES, A_TERMINAL, A_EDITOR };
+struct mitem { const char *label; int action; };   // empty label = separator
+struct menu { const char *title; const struct mitem *items; int n; };
+
+static const struct mitem logo_items[] = { { "About myOS", A_ABOUT }, { "", 0 }, { "Minimize All", A_MINALL },
+                                           { "Close All Windows", A_CLOSEALL } };
+static const struct mitem file_items[] = { { "Open Files", A_FILES }, { "Open Terminal", A_TERMINAL },
+                                           { "Open Editor", A_EDITOR }, { "", 0 }, { "Close Window", A_CLOSE } };
+static const struct mitem window_items[] = { { "Minimize", A_MIN }, { "", 0 }, { "Minimize All", A_MINALL },
+                                             { "Close All Windows", A_CLOSEALL } };
+static const struct mitem help_items[] = { { "About myOS", A_ABOUT } };
+#define NITEMS(a) ((int)(sizeof(a) / sizeof((a)[0])))
+// menus[0] is the logo menu; 1.. are the titles in the bar. Edit and View
+// have no actions yet, so they do not open.
+static const struct menu menus[] = {
+    { "", logo_items, NITEMS(logo_items) },
+    { "File", file_items, NITEMS(file_items) },
+    { "Edit", NULL, 0 },
+    { "View", NULL, 0 },
+    { "Window", window_items, NITEMS(window_items) },
+    { "Help", help_items, NITEMS(help_items) },
+};
+#define NMENUS NITEMS(menus)
 
 // ---------------------------------------------------------------- dock layout
 static int base_width(void) {
@@ -244,15 +274,30 @@ static struct rect tooltip_rect(int i) {
 // ---------------------------------------------------------------- menu bar geometry
 static struct rect logo_rect(void) { return (struct rect){ 6, 0, 34, MENUBAR_H }; }
 
-static struct rect menu_rect(void) {
-    return (struct rect){ 8, MENUBAR_H + 2, MENU_W, 10 + 3 * MENU_ITEM_H + 9 };
+static int sep_h(void) { return 9; }
+
+// x of the left edge of menu title i (1..NMENUS-1) in the bar, and its width.
+static struct rect title_rect(int i) {
+    struct window *f = wm_focused();
+    int x = 48 + text_width(&afont_ui_bold, f ? f->app->name : "myOS") + MENUBAR_ITEM_GAP;
+    for (int k = 1; k < i; k++) x += text_width(&afont_ui, menus[k].title) + MENUBAR_ITEM_GAP;
+    int w = text_width(&afont_ui, menus[i].title);
+    return (struct rect){ x - 8, 2, w + 16, MENUBAR_H - 4 };
 }
 
-static struct rect menu_item_rect(int i) {
-    struct rect m = menu_rect();
-    int y = m.y + 5;
-    for (int k = 0; k < i; k++) y += menu_items[k][0] ? MENU_ITEM_H : 9;
-    return (struct rect){ m.x + 5, y, m.w - 10, menu_items[i][0] ? MENU_ITEM_H : 9 };
+static struct rect menu_rect(int m) {
+    int h = 10;
+    for (int k = 0; k < menus[m].n; k++) h += menus[m].items[k].label[0] ? MENU_ITEM_H : sep_h();
+    int x = m == 0 ? 8 : title_rect(m).x;
+    return (struct rect){ x, MENUBAR_H + 2, MENU_W, h - 1 };
+}
+
+static struct rect menu_item_rect(int m, int i) {
+    struct rect r = menu_rect(m);
+    int y = r.y + 5;
+    for (int k = 0; k < i; k++) y += menus[m].items[k].label[0] ? MENU_ITEM_H : sep_h();
+    int h = menus[m].items[i].label[0] ? MENU_ITEM_H : sep_h();
+    return (struct rect){ r.x + 5, y, r.w - 10, h };
 }
 
 struct rect cursor_rect(int x, int y) { return (struct rect){ x - 2, y - 2, 16, 24 }; }
@@ -316,13 +361,14 @@ static void draw_menubar(struct surface *b) {
     gfx_blit(b, 0, 0, &scr.frost_top);
     gfx_hline(b, 0, MENUBAR_H - 1, scr.w, MENUBAR_LINE);
     int ty = (MENUBAR_H - afont_ui.height) / 2;
-    if (menu_open) gfx_fill_rrect(b, (struct rect){ 8, 2, 30, MENUBAR_H - 4 }, 5, MENUBAR_SEL);
-    glyph_logo(b, 23 * 16, MENUBAR_H * 8, 16, C_TEXT, menu_open ? RGB(0xd0, 0xd0, 0xd6) : RGB(0xee, 0xec, 0xf6));
+    if (menu_open == 0) gfx_fill_rrect(b, (struct rect){ 8, 2, 30, MENUBAR_H - 4 }, 5, MENUBAR_SEL);
+    else if (menu_open > 0) gfx_fill_rrect(b, title_rect(menu_open), 5, MENUBAR_SEL);
+    glyph_logo(b, 23 * 16, MENUBAR_H * 8, 16, C_TEXT, menu_open == 0 ? RGB(0xd0, 0xd0, 0xd6) : RGB(0xee, 0xec, 0xf6));
     struct window *f = wm_focused();
     int x = 48;
     x = text_draw(b, &afont_ui_bold, x, ty, f ? f->app->name : "myOS", C_TEXT) + MENUBAR_ITEM_GAP;
-    for (unsigned i = 0; i < sizeof menu_titles / sizeof menu_titles[0]; i++)
-        x = text_draw(b, &afont_ui, x, ty, menu_titles[i], C_TEXT) + MENUBAR_ITEM_GAP;
+    for (int i = 1; i < (int)NMENUS; i++)
+        x = text_draw(b, &afont_ui, x, ty, menus[i].title, C_TEXT) + MENUBAR_ITEM_GAP;
     int cw = text_width(&afont_ui, clock_text);
     text_draw(b, &afont_ui, scr.w - MENUBAR_PAD - cw, ty, clock_text, C_TEXT);
     draw_status(b, scr.w - MENUBAR_PAD - cw - 44);
@@ -361,18 +407,19 @@ static void draw_tooltip(struct surface *b) {
 }
 
 static void draw_menu(struct surface *b) {
-    if (!menu_open) return;
-    struct rect m = menu_rect();
+    if (menu_open < 0) return;
+    struct rect m = menu_rect(menu_open);
     if (!rect_overlaps(rect_inset(m, -24), b->clip)) return;
     gfx_shadow(b, m, MENU_RADIUS, 18, 8, 0x48);
     gfx_fill_rrect(b, m, MENU_RADIUS, MENU_BG);
     gfx_stroke_rrect(b, m, MENU_RADIUS, MENU_BORDER);
-    for (int i = 0; i < NMENU; i++) {
-        struct rect r = menu_item_rect(i);
-        if (!menu_items[i][0]) { gfx_hline(b, r.x + 6, r.y + r.h / 2, r.w - 12, MENU_BORDER); continue; }
+    for (int i = 0; i < menus[menu_open].n; i++) {
+        struct rect r = menu_item_rect(menu_open, i);
+        const char *label = menus[menu_open].items[i].label;
+        if (!label[0]) { gfx_hline(b, r.x + 6, r.y + r.h / 2, r.w - 12, MENU_BORDER); continue; }
         bool hov = i == menu_hover;
         if (hov) gfx_fill_rrect(b, r, 5, MENU_HOVER);
-        text_draw(b, &afont_ui, r.x + 10, r.y + (r.h - afont_ui.height) / 2, menu_items[i], hov ? WHITE : C_TEXT);
+        text_draw(b, &afont_ui, r.x + 10, r.y + (r.h - afont_ui.height) / 2, label, hov ? WHITE : C_TEXT);
     }
 }
 
@@ -413,20 +460,41 @@ void shell_draw_cursor(struct surface *b) {
 }
 
 // ---------------------------------------------------------------- input
-static void set_menu(bool open) {
-    if (menu_open == open) return;
-    menu_open = open;
-    menu_hover = -1;
-    comp_damage(rect_inset(menu_rect(), -30));
-    comp_damage(logo_rect());
+static struct rect menu_damage_rect(int m) {
+    if (m < 0) return (struct rect){ 0, 0, 0, 0 };
+    return rect_inset(menu_rect(m), -30);
 }
 
-static void menu_action(int i) {
-    switch (i) {
-    case 0: wm_open(&app_welcome); break;
-    case 2: for (int k = nwindows - 1; k >= 0; k--) wm_minimize(zorder[k]); break;
-    case 3: while (nwindows) wm_close(zorder[nwindows - 1]); break;
+static void set_menu(int m) {
+    if (menu_open == m) return;
+    comp_damage(menu_damage_rect(menu_open));
+    comp_damage(menu_damage_rect(m));
+    comp_damage((struct rect){ 0, 0, scr.w / 2, MENUBAR_H });   // highlighted title
+    menu_open = m;
+    menu_hover = -1;
+}
+
+static void menu_action(int action) {
+    struct window *f = wm_focused();
+    switch (action) {
+    case A_ABOUT: wm_open(&app_about); break;
+    case A_MIN: if (f) wm_minimize(f); break;
+    case A_MINALL: for (int k = nwindows - 1; k >= 0; k--) wm_minimize(zorder[k]); break;
+    case A_CLOSE: if (f) wm_close(f); break;
+    case A_CLOSEALL: while (nwindows) wm_close(zorder[nwindows - 1]); break;
+    case A_FILES: wm_open(&app_files); break;
+    case A_TERMINAL: wm_open(&app_terminal); break;
+    case A_EDITOR: wm_open(&app_editor); break;
     }
+}
+
+// Which menu (0 = logo, 1.. = titles) the bar position (x, y) belongs to, or -1.
+static int menu_at_bar(int x, int y) {
+    if (y >= MENUBAR_H) return -1;
+    if (rect_contains(logo_rect(), x, y)) return 0;
+    for (int i = 1; i < (int)NMENUS; i++)
+        if (menus[i].n && rect_contains(title_rect(i), x, y)) return i;
+    return -1;
 }
 
 static int dock_hit(int x, int y) {
@@ -441,21 +509,24 @@ static int dock_hit(int x, int y) {
 }
 
 bool shell_mouse_down(int x, int y) {
-    if (menu_open) {
-        if (rect_contains(menu_rect(), x, y)) {
-            for (int i = 0; i < NMENU; i++)
-                if (menu_items[i][0] && rect_contains(menu_item_rect(i), x, y)) {
-                    set_menu(false);
-                    menu_action(i);
+    if (menu_open >= 0) {
+        if (rect_contains(menu_rect(menu_open), x, y)) {
+            int m = menu_open;
+            for (int i = 0; i < menus[m].n; i++)
+                if (menus[m].items[i].label[0] && rect_contains(menu_item_rect(m, i), x, y)) {
+                    set_menu(-1);
+                    menu_action(menus[m].items[i].action);
                     break;
                 }
             return true;
         }
-        set_menu(false);
-        if (rect_contains(logo_rect(), x, y)) return true;
+        int hit = menu_at_bar(x, y);
+        set_menu(hit == menu_open ? -1 : hit);
+        if (y < MENUBAR_H) return true;
     }
     if (y < MENUBAR_H) {
-        if (rect_contains(logo_rect(), x, y)) set_menu(true);
+        int hit = menu_at_bar(x, y);
+        if (hit >= 0) set_menu(hit);
         return true;
     }
     int i = dock_hit(x, y);
@@ -481,14 +552,16 @@ void shell_mouse_move(int x, int y) {
         comp_damage(dock_extent());
         dock_hover = h;
     }
-    if (menu_open) {
-        int mh = -1;
-        for (int i = 0; i < NMENU; i++)
-            if (menu_items[i][0] && rect_contains(menu_item_rect(i), x, y)) mh = i;
+    if (menu_open >= 0) {
+        int mh = -1, m = menu_open;
+        for (int i = 0; i < menus[m].n; i++)
+            if (menus[m].items[i].label[0] && rect_contains(menu_item_rect(m, i), x, y)) mh = i;
         if (mh != menu_hover) {
-            if (menu_hover >= 0) comp_damage(menu_item_rect(menu_hover));
-            if (mh >= 0) comp_damage(menu_item_rect(mh));
+            if (menu_hover >= 0) comp_damage(menu_item_rect(m, menu_hover));
+            if (mh >= 0) comp_damage(menu_item_rect(m, mh));
             menu_hover = mh;
         }
+        int hit = menu_at_bar(x, y);        // slide between titles while open
+        if (hit > 0 && hit != m) set_menu(hit);
     }
 }

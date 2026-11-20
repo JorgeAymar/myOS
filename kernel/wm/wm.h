@@ -58,7 +58,7 @@ void comp_render(void);                  // composites + presents every dirty re
 void wallpaper_render(struct surface *s); // wallpaper.c
 
 // ---- windows (window.c) ----
-#define MAX_WINDOWS 8
+#define MAX_WINDOWS 12
 extern struct window *zorder[MAX_WINDOWS];   // bottom .. top
 extern int nwindows;
 struct window *wm_open(struct app *a);        // create or restore + focus
@@ -92,7 +92,13 @@ struct rect cursor_rect(int x, int y);
 // ---- apps (kernel/apps) ----
 // Apps with client_w == 0 are dock placeholders (shown as "coming soon").
 extern struct app app_welcome, app_notes, app_clock;
+extern struct app app_terminal, app_files, app_editor, app_settings, app_about;
 // Shared icon glyph painters (shell.c)
 extern void (*const icon_glyph_welcome)(struct surface *, struct rect);
 extern void (*const icon_glyph_notes)(struct surface *, struct rect);
 extern void (*const icon_glyph_clock)(struct surface *, struct rect);
+extern void (*const icon_glyph_files)(struct surface *, struct rect);
+extern void (*const icon_glyph_terminal)(struct surface *, struct rect);
+extern void (*const icon_glyph_editor)(struct surface *, struct rect);
+extern void (*const icon_glyph_settings)(struct surface *, struct rect);
+extern void (*const icon_glyph_info)(struct surface *, struct rect);

@@ -300,6 +300,50 @@ int64_t vfs_read_all(const char *path, void **out_buf) {
     return (int64_t)size;
 }
 
+int vfs_path_join(const char *cwd, const char *rel, char *out) {
+    if (!rel) return VFS_EINVAL;
+    if (rel[0] == '/') return normalize(rel, out);
+    char tmp[2 * VFS_PATH_MAX];
+    size_t cl = strlen(cwd), rl = strlen(rel);
+    if (cl + rl + 2 > sizeof tmp) return VFS_ENAMETOOLONG;
+    memcpy(tmp, cwd, cl);
+    tmp[cl] = '/';
+    memcpy(tmp + cl + 1, rel, rl + 1);
+    return normalize(tmp, out);
+}
+
+int vfs_copy(const char *src, const char *dst) {
+    struct vfs_file *in, *outf;
+    int r = vfs_open(src, VFS_O_READ, &in);
+    if (r) return r;
+    if (in->type != VFS_TYPE_FILE) { vfs_close(in); return VFS_EISDIR; }
+    r = vfs_open(dst, VFS_O_WRITE | VFS_O_CREATE | VFS_O_TRUNC, &outf);
+    if (r) { vfs_close(in); return r; }
+    char *buf = kmalloc(4096);
+    if (!buf) { vfs_close(in); vfs_close(outf); return VFS_ENOMEM; }
+    for (;;) {
+        int64_t n = vfs_read(in, buf, 4096);
+        if (n < 0) { r = (int)n; break; }
+        if (n == 0) break;
+        int64_t w = vfs_write(outf, buf, (size_t)n);
+        if (w != n) { r = w < 0 ? (int)w : VFS_EIO; break; }
+    }
+    kfree(buf);
+    vfs_close(in);
+    vfs_close(outf);
+    return r;
+}
+
+int vfs_rename(const char *src, const char *dst) {
+    struct vfs_stat st;
+    int r = vfs_stat(src, &st);
+    if (r) return r;
+    if (st.type == VFS_TYPE_DIR) return VFS_EISDIR;
+    r = vfs_copy(src, dst);
+    if (r) { vfs_unlink(dst); return r; }
+    return vfs_unlink(src);
+}
+
 const char *vfs_strerror(int err) {
     switch (err) {
     case VFS_OK: return "ok";

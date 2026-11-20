@@ -81,6 +81,14 @@ int vfs_mkdir(const char *path);
 int vfs_create(const char *path); // empty regular file; VFS_EEXIST if it exists
 int vfs_unlink(const char *path); // removes a file or an empty directory
 
+// Joins rel onto cwd (rel may be absolute) and normalizes into out
+// (VFS_PATH_MAX bytes). Returns 0 or a negative VFS_E* code.
+int vfs_path_join(const char *cwd, const char *rel, char *out);
+// Copies a regular file (dst is created or truncated).
+int vfs_copy(const char *src, const char *dst);
+// Moves a regular file (copy + unlink); directories return VFS_EISDIR.
+int vfs_rename(const char *src, const char *dst);
+
 const char *vfs_strerror(int err);
 // Reads a whole file into a fresh kmalloc buffer (NUL-terminated, caller frees).
 // Returns the size or a negative error.

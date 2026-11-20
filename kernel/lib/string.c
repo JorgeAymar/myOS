@@ -44,3 +44,30 @@ char *strchr(const char *s, int c) {
     for (; *s; s++) if (*s == (char)c) return (char *)s;
     return c == 0 ? (char *)s : NULL;
 }
+char *strrchr(const char *s, int c) {
+    const char *r = NULL;
+    for (;; s++) {
+        if (*s == (char)c) r = s;
+        if (!*s) break;
+    }
+    return (char *)r;
+}
+char *strcat(char *d, const char *s) { strcpy(d + strlen(d), s); return d; }
+char *strstr(const char *h, const char *n) {
+    size_t nl = strlen(n);
+    if (!nl) return (char *)h;
+    for (; *h; h++) if (!strncmp(h, n, nl)) return (char *)h;
+    return NULL;
+}
+static int lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
+int strcasecmp(const char *a, const char *b) {
+    while (*a && lower((unsigned char)*a) == lower((unsigned char)*b)) { a++; b++; }
+    return lower((unsigned char)*a) - lower((unsigned char)*b);
+}
+int atoi(const char *s) {
+    int sign = 1, v = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { sign = -1; s++; } else if (*s == '+') s++;
+    while (*s >= '0' && *s <= '9') v = v * 10 + (*s++ - '0');
+    return sign * v;
+}
