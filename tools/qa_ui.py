@@ -68,6 +68,12 @@ class UI:
     def click(self, x, y):
         self.goto(x, y); self.button(True); self.button(False); time.sleep(0.3)
 
+    def dblclick(self, x, y):
+        self.goto(x, y)
+        for down in (True, False, True, False):      # well inside the 400 ms double-click window
+            self.q.events([{"type": "btn", "data": {"down": down, "button": "left"}}]); time.sleep(0.04)
+        time.sleep(0.4)
+
     def drag(self, x0, y0, x1, y1):
         self.goto(x0, y0); self.button(True)
         steps = 8
@@ -79,6 +85,21 @@ class UI:
         for down in (True, False):
             self.q.events([{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": qcode}}}])
             time.sleep(0.05)
+
+    def chord(self, mods, qcode):
+        evs = lambda down: [{"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": k}}}
+                            for k in (mods + [qcode] if down else [qcode] + mods[::-1])]
+        self.q.events(evs(True)); time.sleep(0.05); self.q.events(evs(False)); time.sleep(0.1)
+
+    def type(self, text):
+        names = {" ": "spc", "/": "slash", ".": "dot", "-": "minus", "\n": "ret"}
+        for ch in text:
+            if ch == ">":
+                self.chord(["shift"], "dot")
+            elif ch == "_":
+                self.chord(["shift"], "minus")
+            else:
+                self.key(names.get(ch, ch))
 
     def shot(self, name):
         self.n += 1
@@ -154,6 +175,18 @@ def main():
         ui.shot("editor-typing")
         ui.click(747, 761); ui.shot("open-settings")
         ui.click(22, 11); ui.click(60, 42); ui.shot("about-from-logo-menu")
+
+        # --- deeper app checks: Files -> Editor hand-off, read-only save, Terminal file ops and fetch
+        ui.click(22, 11); ui.click(60, 95); ui.shot("close-all")          # logo menu > Close All Windows
+        ui.click(411, 761); ui.dblclick(300, 310); ui.shot("files-open-readme")  # double click README.txt
+        ui.chord(["ctrl"], "s"); ui.shot("editor-save-readonly")
+        ui.click(467, 761)
+        ui.type("echo hola > /disk/qa.txt\n"); ui.type("cat /disk/qa.txt\n")
+        ui.type("mv /disk/qa.txt /disk/qb.txt\n"); ui.type("ls /disk\n")
+        ui.type("rm /disk/qb.txt\n"); ui.type("ls /disk\n"); ui.type("echo x > /nope.txt\n")
+        ui.shot("terminal-file-ops")
+        ui.type("fetch example.com /\n"); time.sleep(8)
+        ui.shot("terminal-fetch")
     finally:
         try:
             q.cmd("quit")
