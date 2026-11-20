@@ -8,3 +8,6 @@ struct app app_editor = {
     .icon_top = RGB(0xff, 0xff, 0xff), .icon_bottom = RGB(0xd8, 0xdc, 0xe4),
     .icon_glyph = glyph,
 };
+
+#include "apps.h"
+void editor_open(const char *path) { (void)path; }
