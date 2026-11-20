@@ -23,6 +23,7 @@ struct app {
     void (*mouse)(struct window *w, int x, int y, uint8_t buttons, int wheel);
     void (*tick)(struct window *w, uint64_t now_ms, bool new_second);
     void (*focus)(struct window *w, bool focused);
+    const char *(*title)(struct window *w);                // optional: title bar text (default: name); call wm_paint_titlebar(w) after it changes
     struct window *win;
 };
 
@@ -92,7 +93,7 @@ struct rect cursor_rect(int x, int y);
 // ---- apps (kernel/apps) ----
 // Apps with client_w == 0 are dock placeholders (shown as "coming soon").
 extern struct app app_welcome, app_notes, app_clock;
-extern struct app app_terminal, app_files, app_editor, app_settings, app_about;
+extern struct app app_terminal, app_files, app_editor, app_settings, app_about, app_browser;
 // Shared icon glyph painters (shell.c)
 extern void (*const icon_glyph_welcome)(struct surface *, struct rect);
 extern void (*const icon_glyph_notes)(struct surface *, struct rect);
@@ -102,3 +103,4 @@ extern void (*const icon_glyph_terminal)(struct surface *, struct rect);
 extern void (*const icon_glyph_editor)(struct surface *, struct rect);
 extern void (*const icon_glyph_settings)(struct surface *, struct rect);
 extern void (*const icon_glyph_info)(struct surface *, struct rect);
+extern void (*const icon_glyph_browser)(struct surface *, struct rect);

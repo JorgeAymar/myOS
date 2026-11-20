@@ -187,7 +187,7 @@ void wm_paint_titlebar(struct window *w) {
         }
     }
     text_center(s, &afont_ui_bold, 0, w->frame.w, (WIN_TITLE_H - afont_ui_bold.height) / 2,
-                w->app->name, active ? C_TEXT_2 : C_TEXT_INACTIVE);
+                w->app->title ? w->app->title(w) : w->app->name, active ? C_TEXT_2 : C_TEXT_INACTIVE);
     comp_damage((struct rect){ w->frame.x, w->frame.y, w->frame.w, WIN_TITLE_H });
 }
 

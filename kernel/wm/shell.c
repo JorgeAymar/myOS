@@ -150,8 +150,6 @@ void app_icon_paint(struct surface *s, struct rect r, const struct app *a) {
 }
 
 // Placeholders until the real apps land (client_w == 0: not openable).
-static struct app ph_browser = { .name = "Browser", .icon_top = RGB(0x5e, 0xe0, 0xf6),
-    .icon_bottom = RGB(0x1a, 0x6c, 0xf0), .icon_glyph = glyph_browser };
 static struct app ph_trash = { .name = "Trash", .icon_top = RGB(0xb4, 0xb4, 0xba),
     .icon_bottom = RGB(0x78, 0x78, 0x7e), .icon_glyph = glyph_trash };
 
@@ -163,9 +161,10 @@ void (*const icon_glyph_terminal)(struct surface *, struct rect) = glyph_termina
 void (*const icon_glyph_editor)(struct surface *, struct rect) = glyph_editor;
 void (*const icon_glyph_settings)(struct surface *, struct rect) = glyph_settings;
 void (*const icon_glyph_info)(struct surface *, struct rect) = glyph_info;
+void (*const icon_glyph_browser)(struct surface *, struct rect) = glyph_browser;
 
 static struct app *dock_apps[] = {
-    &app_files, &app_terminal, &app_editor, &app_notes, &app_clock, &ph_browser, &app_settings, &app_welcome, &ph_trash,
+    &app_files, &app_terminal, &app_editor, &app_notes, &app_clock, &app_browser, &app_settings, &app_welcome, &ph_trash,
 };
 #define NDOCK ((int)(sizeof dock_apps / sizeof dock_apps[0]))
 #define DOCK_SEP_BEFORE (NDOCK - 1)     // thin separator before the trash
