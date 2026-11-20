@@ -34,6 +34,7 @@ void editor_open(const char *path);
 struct entry {
     char name[NAME_MAX_KEEP];
     bool dir;
+    bool cut;             // name was truncated for display: cannot be opened from here
     uint64_t size;
 };
 
@@ -94,7 +95,8 @@ static void load(void) {
         if (F.count >= MAX_ENTRIES) { F.truncated = true; break; }
         struct entry *e = &F.ents[F.count++];
         size_t n = strlen(de.name);
-        if (n >= NAME_MAX_KEEP) n = NAME_MAX_KEEP - 1;
+        e->cut = n >= NAME_MAX_KEEP;
+        if (e->cut) n = NAME_MAX_KEEP - 1;
         memcpy(e->name, de.name, n);
         e->name[n] = 0;
         e->dir = de.type == VFS_TYPE_DIR;
@@ -116,6 +118,7 @@ static void go_up(void) {
 static void open_sel(void) {
     if (F.sel < 0 || F.sel >= F.count) return;
     struct entry *e = &F.ents[F.sel];
+    if (e->cut) { F.err = VFS_ENAMETOOLONG; return; }
     char np[VFS_PATH_MAX];
     int n = ksnprintf(np, sizeof np, "%s%s%s", F.path, strcmp(F.path, "/") ? "/" : "", e->name);
     if (n < 0 || n >= (int)sizeof np) { F.err = VFS_ENAMETOOLONG; return; }

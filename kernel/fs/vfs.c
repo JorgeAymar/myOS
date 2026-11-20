@@ -312,15 +312,24 @@ int vfs_path_join(const char *cwd, const char *rel, char *out) {
     return normalize(tmp, out);
 }
 
+// True when both paths name the same file after normalization.
+static bool same_path(const char *a, const char *b) {
+    char na[VFS_PATH_MAX], nb[VFS_PATH_MAX];
+    return normalize(a, na) == 0 && normalize(b, nb) == 0 && strcmp(na, nb) == 0;
+}
+
 int vfs_copy(const char *src, const char *dst) {
+    if (same_path(src, dst)) return VFS_EINVAL;           // opening dst with TRUNC would empty src
+    struct vfs_stat st;
+    if (vfs_stat(dst, &st) == 0 && st.type == VFS_TYPE_DIR) return VFS_EISDIR;
+    char *buf = kmalloc(4096);                            // before touching dst
+    if (!buf) return VFS_ENOMEM;
     struct vfs_file *in, *outf;
     int r = vfs_open(src, VFS_O_READ, &in);
-    if (r) return r;
-    if (in->type != VFS_TYPE_FILE) { vfs_close(in); return VFS_EISDIR; }
+    if (r) { kfree(buf); return r; }
+    if (in->type != VFS_TYPE_FILE) { kfree(buf); vfs_close(in); return VFS_EISDIR; }
     r = vfs_open(dst, VFS_O_WRITE | VFS_O_CREATE | VFS_O_TRUNC, &outf);
-    if (r) { vfs_close(in); return r; }
-    char *buf = kmalloc(4096);
-    if (!buf) { vfs_close(in); vfs_close(outf); return VFS_ENOMEM; }
+    if (r) { kfree(buf); vfs_close(in); return r; }
     for (;;) {
         int64_t n = vfs_read(in, buf, 4096);
         if (n < 0) { r = (int)n; break; }
@@ -335,12 +344,17 @@ int vfs_copy(const char *src, const char *dst) {
 }
 
 int vfs_rename(const char *src, const char *dst) {
+    if (same_path(src, dst)) return VFS_EINVAL;
     struct vfs_stat st;
     int r = vfs_stat(src, &st);
     if (r) return r;
     if (st.type == VFS_TYPE_DIR) return VFS_EISDIR;
+    bool dst_existed = vfs_stat(dst, &st) == 0;
     r = vfs_copy(src, dst);
-    if (r) { vfs_unlink(dst); return r; }
+    if (r) {
+        if (!dst_existed) vfs_unlink(dst);                // only remove what this call created
+        return r;
+    }
     return vfs_unlink(src);
 }
 

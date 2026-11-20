@@ -327,7 +327,10 @@ void shell_clock_update(void) {
     clock_drawn = r;
 }
 
+static void set_menu(int m);
+
 void shell_windows_changed(void) {
+    set_menu(-1);     // the title positions depend on the focused app name: never leave a menu open across a change
     comp_damage((struct rect){ 0, 0, scr.w / 2, MENUBAR_H });   // app name
     comp_damage(dock_extent());                                 // running dots
 }
@@ -561,6 +564,6 @@ void shell_mouse_move(int x, int y) {
             menu_hover = mh;
         }
         int hit = menu_at_bar(x, y);        // slide between titles while open
-        if (hit > 0 && hit != m) set_menu(hit);
+        if (hit >= 0 && hit != m) set_menu(hit);
     }
 }

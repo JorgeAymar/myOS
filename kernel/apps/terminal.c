@@ -366,6 +366,7 @@ static void cmd_rm(int argc, char **argv) {
     int e = resolve(argv[1], path);
     if (e == 0) {
         if (strcmp(path, "/") == 0) { err("rm: refusing to remove /"); return; }
+        if (strcmp(path, cwd) == 0) { err("rm: refusing to remove the current directory"); return; }
         e = vfs_unlink(path);
     }
     if (e < 0) perr("rm", argv[1], e);
