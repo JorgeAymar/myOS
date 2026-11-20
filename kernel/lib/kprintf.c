@@ -71,10 +71,19 @@ int ksnprintf(char *buf, size_t size, const char *fmt, ...) {
     return n;
 }
 
+// Uniprocessor: one whole line goes to the serial port inside a single
+// irq-disabled section (same flag save/restore as irq_save() in the scheduler,
+// so it nests with the PMM/VMM/heap sections). No lock is taken, so a panic or
+// exception that interrupts a kprintf cannot deadlock. The line is formatted
+// into a bounded stack buffer first (longer lines are truncated at 511 bytes)
+// and nothing in the critical section allocates.
 void kprintf(const char *fmt, ...) {
     char buf[512];
     va_list ap; va_start(ap, fmt);
     kvsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
+    uint64_t f;
+    __asm__ volatile ("pushfq; popq %0; cli" : "=r"(f) :: "memory");
     serial_puts(buf);
+    if (f & (1u << 9)) __asm__ volatile ("sti" ::: "memory");
 }

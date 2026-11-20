@@ -55,6 +55,17 @@ static void spinner(void *arg) {
     while (!spin_stop) spin_count++;              // never yields
 }
 
+// kprintf atomicity: three threads print numbered lines concurrently; each line
+// is "[kpl] tN nNNN <marker>" and the host greps the serial log for garbling.
+#define KPL_LINES 80
+static void kpl_worker(void *arg) {
+    int id = (int)(uintptr_t)arg;
+    for (int i = 0; i < KPL_LINES; i++) {
+        kprintf("[kpl] t%d n%03d ======================== end\n", id, i);
+        if (i % 16 == 0) thread_yield();
+    }
+}
+
 static tid_t must_create(const char *name, thread_entry_t fn, void *arg) {
     tid_t t = thread_create(name, fn, arg);
     if (t < 0) panic("sched test: thread_create('%s') failed", name);
@@ -124,6 +135,12 @@ void sched_selftest(void) {
     if (n != 2 || sched_live_stacks() != 1)
         panic("sched test: %d threads / %d stacks left after exit, expected 2 / 1",
               n, sched_live_stacks());
+
+    // 6. kprintf lock: concurrent printing must not interleave lines.
+    for (int i = 0; i < N_WORKERS; i++)
+        w[i] = must_create("test/kprintf", kpl_worker, (void *)(uintptr_t)i);
+    for (int i = 0; i < N_WORKERS; i++) thread_join(w[i]);
+    kprintf("[OK] kprintf-lock: %d lines from %d threads\n", N_WORKERS * KPL_LINES, N_WORKERS);
 
     uint64_t took = timer_ticks_ms() - t_start;
     kprintf("[OK] sched mutex counter=%lu (contended %lu), sem/cond handshake\n",
