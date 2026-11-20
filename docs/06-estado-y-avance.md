@@ -18,7 +18,7 @@
 | 8 | Multitarea: hilos y scheduler | ✅ Hecha |
 | 9 | Userspace: ring 3, syscalls, ELF | ✅ Hecha |
 | 10 | Sistema de archivos: VFS, initrd, AHCI, FAT32 | ✅ Hecha |
-| 11 | Apps: Terminal, Archivos, Editor, Reloj, Ajustes | 🔄 Reloj hecho; el resto, pendiente |
+| 11 | Apps: Terminal, Archivos, Editor, Reloj, Ajustes, Acerca de | ✅ Hecha |
 | 12 | Red: e1000, TCP/IP, DHCP, DNS, HTTP | ✅ Hecha |
 | 13 | TLS + navegador | ⏳ Pendiente |
 | 14 | Pulido: apagado ACPI, animaciones, rendimiento | ⏳ Pendiente |
@@ -53,5 +53,6 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 
 ## Próximos pasos
 
-1. Llamar a `net_poll()` en el bucle principal, o desde un hilo de red, para que la red funcione después del arranque.
-2. Fase 11: Terminal con shell (`ls`, `cat`, `ping`, `fetch`), Archivos y Ajustes.
+1. Fase 13: TLS (BearSSL), HTTPS nativo y render HTML básico en el navegador.
+2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
+3. Deuda: menús Edit y View sin acciones, `kprintf` sin lock, botón verde que solo recentra, `ping` y `fetch` de la Terminal bloquean la interfaz hasta su timeout.

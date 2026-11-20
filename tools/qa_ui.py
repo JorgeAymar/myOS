@@ -114,12 +114,12 @@ def main():
         ui.shot("boot")
 
         ui.home()
-        ui.goto(607, 761); ui.shot("hover-dock-clock")          # magnification + tooltip, dy direction
-        ui.click(607, 761); ui.shot("open-clock")
+        ui.goto(635, 761); ui.shot("hover-dock-clock")          # magnification + tooltip, dy direction
+        ui.click(635, 761); ui.shot("open-clock")
         ui.drag(680, 219, 380, 419); ui.shot("drag-welcome")      # title bar drag (-300, +200)
         ui.click(188, 163); ui.shot("close-notes")                # Notes red light
         ui.click(138 + 20, 419); ui.shot("minimize-welcome")      # welcome yellow light after drag
-        ui.click(775, 761); ui.shot("restore-welcome-from-dock")
+        ui.click(803, 761); ui.shot("restore-welcome-from-dock")
         ui.click(22, 11); ui.shot("logo-menu")
         ui.key("esc"); ui.click(1000, 600); ui.shot("menu-dismissed")
         for k in ["h", "e", "l", "l", "o", "ret"]:
@@ -128,7 +128,7 @@ def main():
 
         # stress: open/close the clock repeatedly through the dock and its close light
         for i in range(25):
-            ui.click(607, 761)
+            ui.click(635, 761)
             time.sleep(0.2)
         ui.shot("clock-reopened-25x")
         time.sleep(3)
@@ -136,11 +136,24 @@ def main():
 
         # traffic lights on the Clock window (opens at 154,126; lights at y+14, x+18/+38/+58)
         ui.click(154 + 18, 126 + 14); ui.shot("clock-closed-red")
-        ui.click(607, 761); ui.click(154 + 38, 126 + 14); ui.shot("clock-minimized-yellow")
-        ui.click(607, 761); ui.shot("clock-restored-dock")
+        ui.click(635, 761); ui.click(154 + 38, 126 + 14); ui.shot("clock-minimized-yellow")
+        ui.click(635, 761); ui.shot("clock-restored-dock")
         ui.click(154 + 58, 126 + 14); ui.shot("clock-zoom-green")
         # Welcome "Get Started" button closes the window (welcome frame at 100,410 after the drag)
-        ui.click(775, 761); ui.click(100 + 560 - 32 - 60, 410 + 28 + 256 + 8); ui.shot("welcome-get-started")
+        ui.click(803, 761); ui.click(100 + 560 - 32 - 60, 410 + 28 + 256 + 8); ui.shot("welcome-get-started")
+
+        # phase 11 apps, opened from the dock (9 icons: files 411, terminal 467, editor 523, ... settings 747)
+        ui.click(411, 761); ui.shot("open-files")
+        ui.click(467, 761); ui.shot("open-terminal")
+        for k in ["l", "s", "ret", "p", "w", "d", "ret"]:
+            ui.key(k)
+        ui.shot("terminal-ls-pwd")
+        ui.click(523, 761); ui.shot("open-editor")
+        for k in ["h", "i", "spc", "m", "y", "o", "s", "ret"]:
+            ui.key(k)
+        ui.shot("editor-typing")
+        ui.click(747, 761); ui.shot("open-settings")
+        ui.click(22, 11); ui.click(60, 42); ui.shot("about-from-logo-menu")
     finally:
         try:
             q.cmd("quit")
@@ -148,7 +161,9 @@ def main():
             pass
         qemu.wait(timeout=10)
         log = open(SERIAL, errors="replace").read()
-        bad = [l for l in log.splitlines() if any(k in l for k in ("[FAIL]", "exception", "panic", "PANIC"))]
+        expected = ("user/faulty", "[arch] user exception 14")   # intentional ring-3 fault selftest
+        bad = [l for l in log.splitlines()
+               if any(k in l for k in ("[FAIL]", "exception", "panic", "PANIC")) and not any(e in l for e in expected)]
         print("serial problems:", bad if bad else "none")
 
 
