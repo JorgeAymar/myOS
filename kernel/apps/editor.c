@@ -50,6 +50,7 @@ static size_t want_col;               // preferred column for Up/Down
 static int top, left;                 // first visible visual row / column
 static char path[VFS_PATH_MAX];       // "" = Untitled
 static bool modified, wrap;
+static bool cut_load;                 // file was larger than MAX_FILE: saving it in place would lose data
 static char msg[96];                  // status message ("" = none)
 static bool focused, blink_on;
 static uint64_t blink_phase, now_ms;
@@ -339,6 +340,7 @@ static void new_document(void) {
     buf = NULL; len = cap = 0;
     path[0] = 0;
     modified = false;
+    cut_load = false;
     msg[0] = 0;
     clear_history();
     reset_view();
@@ -534,6 +536,7 @@ static bool load_path(const char *p) {
     if (!buf) { len = cap = 0; }
     else if (len > MAX_FILE) {
         len = MAX_FILE;
+        cut_load = true;
         set_msg("File too large: opened truncated at 256 KiB");
     }
     return true;
@@ -572,6 +575,10 @@ void editor_open(const char *p) {
 
 static bool write_file(const char *target) {
     struct vfs_file *f;
+    if (cut_load && !strcmp(target, path)) {
+        set_msg("Not saved: file was opened truncated. Use Save As");
+        return false;
+    }
     int r = vfs_open(target, VFS_O_WRITE | VFS_O_CREATE | VFS_O_TRUNC, &f);
     if (r < 0) {
         if (r == VFS_EROFS) set_msg("Read-only file system");

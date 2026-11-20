@@ -190,6 +190,11 @@ def main():
         ui.shot("terminal-file-ops")
         ui.type("fetch example.com /\n"); time.sleep(8)
         ui.shot("terminal-fetch")
+
+        # Browser (dock icon 6 of 9 at x=691): home page, then load example.com through the address bar
+        ui.click(691, 761); ui.shot("browser-home")
+        ui.chord(["ctrl"], "l"); ui.type("example.com\n"); time.sleep(14)
+        ui.shot("browser-example-com")
     finally:
         try:
             q.cmd("quit")

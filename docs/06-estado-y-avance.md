@@ -51,8 +51,15 @@ Los autotests de red y de escritura en disco ya solo corren en modo test. El seg
 
 Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.h` ni las fuentes generadas), con todos los subsistemas de las rondas 1 y 2 ya integrados.
 
+## Después de la fase 11
+
+- **Navegador HTTP** (`kernel/apps/browser.c`, `html.c`): barra de dirección, historial, redirecciones, chunked, enlaces y HTML básico sin imágenes, CSS ni JavaScript. HTTPS espera a la fase 13.
+- **Editor tipo Notepad:** selección, copiar y pegar, deshacer y rehacer, Guardar como, Abrir, Buscar, Ir a línea, ajuste de línea y título con la ruta.
+- **`kprintf` atómico** por línea (interrupciones desactivadas durante la escritura serie).
+- **Revisión de código** de la fase 11: corregidos `cp`/`mv` sobre el mismo archivo, `rename` que podía borrar el destino, `rm .`, nombres largos en Archivos, guardar un archivo abierto truncado y el menú que quedaba abierto al cambiar el foco.
+
 ## Próximos pasos
 
-1. Fase 13: TLS (BearSSL), HTTPS nativo y render HTML básico en el navegador.
+1. Fase 13: TLS (BearSSL) y HTTPS nativo en el navegador.
 2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
-3. Deuda: menús Edit y View sin acciones, `kprintf` sin lock, botón verde que solo recentra, `ping` y `fetch` de la Terminal bloquean la interfaz hasta su timeout.
+3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra, `ping`, `fetch` y la carga de páginas bloquean la interfaz hasta terminar (falta un hilo de red).
