@@ -34,8 +34,10 @@ struct lay {
     int maxasc, maxdesc, first, nlines;
     bool has, space, stop, skip_nl;
     bool no_head_end;               // searched once: no </head anywhere
+    bool trunc;                     // a hard limit (runs/pool) was hit
+    bool reserve;                   // writing the truncation notice: use the reserved space
     int bold, ital, mono, pre, hf, quote, link;
-    int depth;
+    int depth, ul_over, q_over;
     bool lord[8];
     int lnum[8];
     char wb[120]; int wl;
@@ -73,7 +75,12 @@ static void block_break(struct lay *L, int g) {
 
 static void add_run(struct lay *L, const char *t, int len, int font, color_t c, int x, int kind, int w) {
     struct hdoc *d = L->d;
-    if (d->nruns >= MAX_RUNS || d->pool_len + len + 1 > POOL_SZ) { L->stop = true; return; }
+    int rmax = L->reserve ? MAX_RUNS : MAX_RUNS - 4, pmax = L->reserve ? POOL_SZ : POOL_SZ - 64;
+    if (d->nruns >= rmax || d->pool_len + len + 1 > pmax) { L->stop = true; L->trunc = true; return; }
+    if (x < 0) x = 0;
+    if (x > 30000) x = 30000;
+    if (w < 0) w = 0;
+    if (w > 30000) w = 30000;
     struct hrun *r = &d->runs[d->nruns++];
     r->x = (int16_t)x; r->w = (int16_t)w; r->y = L->y;
     r->off = (uint32_t)d->pool_len;
@@ -144,6 +151,7 @@ static void pre_flush(struct lay *L) {
     L->pb[L->pl] = 0;
     begin_content(L);
     int w = f_width(F_MONO, L->pb);
+    if (L->x + w > 20000) { end_line(L); begin_content(L); }
     add_run(L, L->pb, L->pl, F_MONO, cur_color(L), L->x, K_TEXT, w);
     L->x += w;
     L->pl = 0;
@@ -307,7 +315,9 @@ static bool get_attr(const char *s, const char *e, const char *name, char *out, 
             if (strcmp(an, name) == 0) {
                 int o = 0;
                 for (const char *c = vs; c < ve && o < n - 1; c++) {
-                    if (*c == '&' && ve - c >= 5 && memcmp(c, "&amp;", 5) == 0) { out[o++] = '&'; c += 4; }
+                    unsigned ecp;
+                    int ek = *c == '&' ? entity(c, ve, &ecp) : 0;
+                    if (ek) { out[o++] = (ecp >= 0x20 && ecp < 0x7f) ? (char)ecp : (ecp == 0xa0 ? ' ' : '?'); c += ek - 1; }
                     else if (*c != '\n' && *c != '\r' && *c != '\t') out[o++] = *c;
                 }
                 out[o] = 0;
@@ -318,7 +328,37 @@ static bool get_attr(const char *s, const char *e, const char *name, char *out, 
     return false;
 }
 
+// Links the Browser cannot (or must not) navigate: shown as plain text.
+static bool bad_scheme(const char *h) {
+    while (*h == ' ') h++;
+    static const char *const bad[] = { "javascript:", "mailto:", "tel:", "data:", "vbscript:", "sms:" };
+    for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        size_t n = strlen(bad[i]), k = 0;
+        while (k < n && lc(h[k]) == bad[i][k]) k++;
+        if (k == n) return true;
+    }
+    return false;
+}
+
 static bool is(const char *a, const char *b) { return strcmp(a, b) == 0; }
+
+static unsigned utf8_next(const char **pp, const char *end);
+
+// Feeds a UTF-8 string (at most max bytes) into the text flow.
+static void emit_str(struct lay *L, const char *t, int max) {
+    const char *e = t;
+    while (e - t < max && *e) e++;
+    while (t < e) emit_cp(L, utf8_next(&t, e));
+}
+
+// Small non-negative integer attribute, -1 if absent/garbage (never overflows).
+static int attr_int(const char *s, const char *e, const char *name) {
+    char b[12];
+    if (!get_attr(s, e, name, b, sizeof b) || b[0] < '0' || b[0] > '9') return -1;
+    int v = 0;
+    for (const char *c = b; *c >= '0' && *c <= '9'; c++) v = v * 10 + (*c - '0');
+    return v;
+}
 
 static void heading(struct lay *L, int level, bool open) {
     if (open) {
@@ -344,14 +384,44 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
     if (n == 0) return NULL;
     if (!L->pre) put_word(L); else pre_flush(L);
 
-    if (is(nm, "script") || is(nm, "style") || is(nm, "title") || is(nm, "head") || is(nm, "noscript")) {
+    if (is(nm, "img")) {
+        char alt[80];
+        if (!get_attr(s, e, "alt", alt, sizeof alt) || !alt[0]) return NULL;
+        int w = attr_int(s, e, "width"), h = attr_int(s, e, "height");
+        if (w == 1 || h == 1 || w == 0 || h == 0) return NULL;      // tracking pixel
+        emit_str(L, "[", 1); emit_str(L, alt, 60); emit_str(L, "]", 1);
+        return NULL;
+    }
+    if (is(nm, "input")) {
+        char ty[16] = "", v[64] = "";
+        get_attr(s, e, "type", ty, sizeof ty);
+        for (char *c = ty; *c; c++) *c = lc(*c);
+        if (is(ty, "hidden")) return NULL;
+        if (is(ty, "checkbox") || is(ty, "radio")) { emit_str(L, "[ ]", 3); return NULL; }
+        bool btn = is(ty, "submit") || is(ty, "button") || is(ty, "reset") || is(ty, "image");
+        if (!get_attr(s, e, "value", v, sizeof v) || !v[0]) {
+            if (btn) strcpy(v, is(ty, "reset") ? "Reset" : "Submit");
+            else if (!get_attr(s, e, "placeholder", v, sizeof v)) v[0] = 0;
+        }
+        emit_str(L, "[ ", 2);
+        if (v[0] && is(ty, "password") && !btn) emit_str(L, "****", 4);
+        else emit_str(L, v[0] ? v : "______", 40);
+        emit_str(L, " ]", 2);
+        return NULL;
+    }
+    if (is(nm, "button")) { emit_str(L, closing ? " ]" : "[ ", 2); return NULL; }
+    if (!closing && (is(nm, "select") || is(nm, "textarea"))) emit_str(L, is(nm, "select") ? "[ select ]" : "[ text ]", 12);
+
+    if (is(nm, "script") || is(nm, "style") || is(nm, "title") || is(nm, "head") || is(nm, "noscript") ||
+        is(nm, "svg") || is(nm, "template") || is(nm, "select") || is(nm, "textarea") || is(nm, "iframe") ||
+        is(nm, "object") || is(nm, "canvas")) {
         if (closing) return NULL;
         char needle[24] = "</";
         strcat(needle, nm);
         if (L->no_head_end && is(nm, "head")) return NULL;
         const char *q = find_ci(e, L->end, needle);
         if (!q) {
-            if (!is(nm, "head")) return L->end;
+            if (!is(nm, "head")) { L->stop = true; return L->end; }
             L->no_head_end = true;       // avoid a quadratic rescan on every later <head>
             return NULL;
         }
@@ -376,9 +446,11 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
         if (!closing) {
             block_break(L, L->depth == 0 ? 8 : 2);
             if (L->depth < 8) { L->lord[L->depth] = is(nm, "ol"); L->lnum[L->depth] = 0; L->depth++; L->lm += 26; }
+            else L->ul_over++;          // too deep: ignored, but balanced on close
         } else {
             block_break(L, L->depth == 1 ? 8 : 2);
-            if (L->depth > 0) { L->depth--; L->lm -= 26; }
+            if (L->ul_over > 0) L->ul_over--;
+            else if (L->depth > 0) { L->depth--; L->lm -= 26; }
         }
         return NULL;
     }
@@ -406,7 +478,7 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
         if (closing) { L->link = -1; return NULL; }
         char href[HTML_LINK_LEN];
         L->link = -1;
-        if (get_attr(s, e, "href", href, sizeof href) && href[0] && strncmp(href, "javascript:", 11) != 0 &&
+        if (get_attr(s, e, "href", href, sizeof href) && href[0] && !bad_scheme(href) &&
             L->d->nlinks < HTML_MAX_LINKS) {
             strcpy(L->d->links[L->d->nlinks], href);
             L->link = L->d->nlinks++;
@@ -425,14 +497,17 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
     }
     if (is(nm, "blockquote")) {
         block_break(L, 8);
-        if (!closing) { L->lm += 28; L->quote++; }
+        if (!closing) {
+            if (L->quote < 6) { L->lm += 28; L->quote++; }
+            else L->q_over++;
+        } else if (L->q_over > 0) L->q_over--;
         else if (L->quote > 0) { L->lm -= 28; L->quote--; }
         return NULL;
     }
     if (is(nm, "hr")) {
         block_break(L, 6);
         begin_content(L);
-        add_run(L, "", 0, F_UI, 0, L->lm, K_HR, L->width - L->lm);
+        add_run(L, "", 0, F_UI, 0, L->lm, K_HR, imax(L->width - L->lm, 0));
         if (L->d->nruns > 0) L->d->runs[L->d->nruns - 1].y = L->y + 4;
         L->maxasc = 8; L->maxdesc = 1;
         end_line(L);
@@ -442,7 +517,7 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
     if (is(nm, "table")) { block_break(L, 8); return NULL; }
     if (is(nm, "td") || is(nm, "th")) {
         if (is(nm, "th")) adj(&L->bold, closing);
-        if (!closing && L->has) { L->x += 20; L->space = false; }
+        if (!closing && L->has) { if (L->x < L->width) L->x += 20; L->space = false; }
         return NULL;
     }
     return NULL;
@@ -479,7 +554,14 @@ static unsigned utf8_next(const char **pp, const char *end) {
     return cp;
 }
 
+void html_free(struct hdoc *d) {
+    if (!d) return;
+    kfree(d->runs); kfree(d->pool); kfree(d->links); kfree(d);
+}
+
 void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
+    if (width < 120) width = 120;
+    if (width > 8000) width = 8000;
     d->nruns = 0; d->pool_len = 0; d->nlinks = 0; d->height = 0; d->title[0] = 0;
     size_t n = 0;
     while (n < HTML_MAX_INPUT && html[n]) n++;
@@ -550,6 +632,14 @@ void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
     put_word(&L);
     pre_flush(&L);
     end_line(&L);
+    if (L.trunc || (L.stop && p < end) || (n == HTML_MAX_INPUT && html[n])) {
+        L.stop = false; L.reserve = true;
+        L.lm = 28; L.pre = 0; L.hf = -1; L.link = -1; L.bold = L.mono = L.quote = 0; L.gap = 8;
+        L.wl = 0; L.pl = 0; L.has = false;
+        emit_str(&L, "[page truncated]", 16);
+        put_word(&L);
+        end_line(&L);
+    }
     d->height = L.y + 16;
 }
 

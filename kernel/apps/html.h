@@ -30,6 +30,7 @@ struct hdoc {
 };
 
 struct hdoc *html_new(void);                       // NULL on OOM
+void html_free(struct hdoc *d);
 // Lays out `html` (NUL-terminated) for a page `width` px wide. plain: text/plain.
 void html_layout(struct hdoc *d, const char *html, int width, bool plain);
 // Draws the document into view (surface coordinates), scrolled by `scroll` px.
