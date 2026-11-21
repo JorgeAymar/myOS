@@ -98,6 +98,8 @@ class UI:
                 self.chord(["shift"], "dot")
             elif ch == "_":
                 self.chord(["shift"], "minus")
+            elif ch.isupper():
+                self.chord(["shift"], ch.lower())
             elif ch == ":":
                 self.chord(["shift"], "semicolon")
             else:
