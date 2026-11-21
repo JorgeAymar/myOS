@@ -64,7 +64,10 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 
 - **Fase 13, HTTPS:** BearSSL integrado (`third_party/bearssl`, `mk/tls.mk`), 118 raíces de Mozilla (`tools/gen_ca_roots.py`), cliente TLS 1.2 con validación (`kernel/net/tls.c`), HTTPS en el Navegador y en `fetch -s`. Los autotests cargan `https://example.com` y rechazan un certificado inválido. Límite conocido: sin RDRAND la entropía es débil (jitter), y la hora del RTC va en hora local.
 
+- **Navegador, ronda 3:** tildes Latin-1 en todas las fuentes (con caída a Latin-1 si la página no es UTF-8), motor HTML endurecido (239 casos de robustez en el arranque, aviso `[page truncated]`, img/form/select visibles), reintento por HTTPS cuando un sitio http resetea la conexión, y un arreglo del lector TLS que bajó `emol.com` de 76 s a ~1 s. Probados: Google, Wikipedia, Hacker News, BBC, emol.com.
+
 ## Próximos pasos
 
-1. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
-2. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
+1. Navegador: formularios funcionales (agente en curso, rama `worktree-agent-adf54d2285e921e80`), imágenes con `stb_image` y CSS mínimo. Sin JavaScript (haría falta soft-float en el kernel).
+2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
+3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
