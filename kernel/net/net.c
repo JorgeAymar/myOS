@@ -8,6 +8,7 @@
 #include "string.h"
 #include "boot.h"
 #include "proc.h"
+#include "tls.h"
 
 struct netif net_if;
 bool net_in_poll;
@@ -121,6 +122,7 @@ static void net_selftest(void) {
         } else {
             kprintf("[WARN] http GET %s failed (%d)\n", SELFTEST_HOST, r);
         }
+        tls_https_selftest();
     }
     kprintf("[net] self-test took %lums\n", timer_ticks_ms() - t0);
 }

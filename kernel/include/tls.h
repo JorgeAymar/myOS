@@ -8,6 +8,9 @@
 // Blocking; call it from the net job thread, never from the GUI thread.
 int https_get_timeout(const char *host, const char *path, char *buf, size_t len, uint32_t timeout_ms);
 
+// Boot self-check (test mode): real handshake with example.com + bad-cert rejection.
+void tls_https_selftest(void);
+
 // Platform services the TLS stack needs (kernel/lib/entropy.c).
 void tls_entropy(void *buf, size_t n);     // cryptographic-quality-as-possible random bytes
 uint64_t tls_unix_time(void);              // seconds since 1970-01-01 UTC, from the RTC
