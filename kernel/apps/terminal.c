@@ -235,7 +235,7 @@ static void cmd_help(void) {
     out("  clear              clear the screen");
     out("  ifconfig           show network configuration");
     out("  ping <ip|host>     ICMP echo, 3 tries");
-    out("  fetch <host> [path]  HTTP GET (port 80 only, no TLS)");
+    out("  fetch [-s] <host|url> [path]  HTTP GET; https:// or -s uses TLS");
     out("  date               show the RTC date and time");
     out("  uname              system information");
     out("Keys: Up/Down history, PgUp/PgDn and mouse wheel scroll,");
@@ -439,24 +439,31 @@ static void ping_done(struct net_job *j) {
     job_kind = JOB_NONE;
 }
 
+static bool fetch_tls;
+
 static void cmd_fetch(struct window *w, int argc, char **argv) {
     (void)w;
-    if (argc < 2) { err("usage: fetch <host> [path]   (HTTP on port 80 only, no HTTPS)"); return; }
+    bool tls = false;
+    if (argc > 1 && !strcmp(argv[1], "-s")) { tls = true; argc--; argv++; }
+    if (argc < 2) { err("usage: fetch [-s] <host|url> [path]   (-s or https:// = TLS)"); return; }
     char host[96], path[160];
     const char *h = argv[1];
-    if (strncmp(h, "https://", 8) == 0) { err("fetch: HTTPS is not supported (port 80 only)"); return; }
-    if (strncmp(h, "http://", 7) == 0) h += 7;
+    if (strncmp(h, "https://", 8) == 0) { tls = true; h += 8; }
+    else if (strncmp(h, "http://", 7) == 0) h += 7;
     const char *sl = strchr(h, '/');
     size_t hl = sl ? (size_t)(sl - h) : strlen(h);
     if (hl == 0 || hl >= sizeof host) { err("fetch: bad host name"); return; }
     memcpy(host, h, hl);
     host[hl] = 0;
-    if (strchr(host, ':')) { err("fetch: only port 80 is supported"); return; }
+    if (strchr(host, ':')) { err("fetch: custom ports are not supported"); return; }
     const char *p = argc > 2 ? argv[2] : sl ? sl : "/";
     ksnprintf(path, sizeof path, "%s%s", p[0] == '/' ? "" : "/", p);
 
-    if (!net_job_start_http(&job_tok, host, path, FETCH_BUF, 10000)) { err("fetch: network busy, try again"); return; }
-    out("GET http://%s%s ...", host, path);
+    bool ok = tls ? net_job_start_https(&job_tok, host, path, FETCH_BUF, 15000)
+                  : net_job_start_http(&job_tok, host, path, FETCH_BUF, 10000);
+    if (!ok) { err("fetch: network busy, try again"); return; }
+    out("GET %s://%s%s ...", tls ? "https" : "http", host, path);
+    fetch_tls = tls;
     job_kind = JOB_FETCH;
 }
 
@@ -465,7 +472,8 @@ static void fetch_done(struct net_job *j) {
     int n = j->result;
     if (n < 0) {
         err("fetch: failed (%s)", n == NET_ETIMEDOUT ? "timed out" : n == NET_ENOTFOUND ? "host not found"
-                                 : n == NET_ERESET ? "connection reset" : "error");
+                                 : n == NET_ERESET ? "connection reset"
+                                 : (n == NET_ERR && fetch_tls) ? "TLS handshake or certificate error" : "error");
         net_job_release();
         return;
     }
