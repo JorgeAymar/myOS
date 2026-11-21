@@ -98,6 +98,8 @@ class UI:
                 self.chord(["shift"], "dot")
             elif ch == "_":
                 self.chord(["shift"], "minus")
+            elif ch == ":":
+                self.chord(["shift"], "semicolon")
             else:
                 self.key(names.get(ch, ch))
 
@@ -195,6 +197,10 @@ def main():
         ui.click(691, 761); ui.shot("browser-home")
         ui.chord(["ctrl"], "l"); ui.type("example.com\n"); time.sleep(14)
         ui.shot("browser-example-com")
+        ui.chord(["ctrl"], "l"); ui.type("https://example.com\n"); time.sleep(20)
+        ui.shot("browser-https-example-com")
+        ui.chord(["ctrl"], "l"); ui.type("https://self-signed.badssl.com\n"); time.sleep(20)
+        ui.shot("browser-https-bad-cert")
     finally:
         try:
             q.cmd("quit")

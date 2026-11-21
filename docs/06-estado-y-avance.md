@@ -20,7 +20,7 @@
 | 10 | Sistema de archivos: VFS, initrd, AHCI, FAT32 | ✅ Hecha |
 | 11 | Apps: Terminal, Archivos, Editor, Reloj, Ajustes, Acerca de | ✅ Hecha |
 | 12 | Red: e1000, TCP/IP, DHCP, DNS, HTTP | ✅ Hecha |
-| 13 | TLS + navegador | ⏳ Pendiente |
+| 13 | TLS + navegador | ✅ Hecha (HTTPS con BearSSL y validación de certificados) |
 | 14 | Pulido: apagado ACPI, animaciones, rendimiento | ⏳ Pendiente |
 | 15 | Port a aarch64, SMP, audio | ⏳ Opcional |
 
@@ -62,8 +62,9 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 
 - **Hilo de red:** el Navegador y `fetch`/`ping` de la Terminal cargan en un hilo aparte (`kernel/net/netjob.c`, mutex de red); la interfaz ya no se congela. Esc cancela una carga. Autotest `[OK] net-job`.
 
+- **Fase 13, HTTPS:** BearSSL integrado (`third_party/bearssl`, `mk/tls.mk`), 118 raíces de Mozilla (`tools/gen_ca_roots.py`), cliente TLS 1.2 con validación (`kernel/net/tls.c`), HTTPS en el Navegador y en `fetch -s`. Los autotests cargan `https://example.com` y rechazan un certificado inválido. Límite conocido: sin RDRAND la entropía es débil (jitter), y la hora del RTC va en hora local.
+
 ## Próximos pasos
 
-1. Fase 13: TLS (BearSSL) y HTTPS nativo en el navegador.
-2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
-3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
+1. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
+2. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
