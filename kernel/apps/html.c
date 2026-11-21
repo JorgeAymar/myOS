@@ -544,10 +544,13 @@ static unsigned utf8_next(const char **pp, const char *end) {
     if (c >= 0xf0) { extra = 3; cp = c & 7; }
     else if (c >= 0xe0) { extra = 2; cp = c & 15; }
     else if (c >= 0xc0) { extra = 1; cp = c & 31; }
-    else { *pp += 1; return 0xfffd; }
+    else { *pp += 1; return c >= 0xa0 ? c : 0xfffd; }   // stray byte: assume Latin-1
     const char *q = *pp + 1;
     for (int i = 0; i < extra; i++, q++) {
-        if (q >= end || (((unsigned char)*q) & 0xc0) != 0x80) { *pp = q; return 0xfffd; }
+        if (q >= end || (((unsigned char)*q) & 0xc0) != 0x80) {
+            *pp += 1;                                       // not UTF-8 after all: lead byte is Latin-1
+            return c;
+        }
         cp = (cp << 6) | (((unsigned char)*q) & 0x3f);
     }
     *pp = q;
