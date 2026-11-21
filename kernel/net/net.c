@@ -7,6 +7,7 @@
 #include "panic.h"
 #include "string.h"
 #include "boot.h"
+#include "proc.h"
 
 struct netif net_if;
 bool net_in_poll;
@@ -67,6 +68,22 @@ bool ip_parse(const char *s, uint32_t *ip) {
 // ---- boot self-tests ----
 #define SELFTEST_HOST "example.com"
 
+// Async job: starts an HTTP job from the boot thread, a second start must be
+// refused while it runs, then waits for completion while yielding.
+static void job_selftest(void) {
+    static int owner;
+    if (!net_job_start_http(&owner, SELFTEST_HOST, "/", 2048, 2500)) panic("net-job: start failed");
+    if (net_job_start_http(&owner, SELFTEST_HOST, "/", 2048, 2500)) panic("net-job: second start not refused");
+    uint64_t dl = timer_ticks_ms() + 6000;
+    struct net_job *j;
+    while (!(j = net_job_done(&owner)) && timer_ticks_ms() < dl) { net_job_poll(); thread_sleep_ms(1); }
+    if (!j) panic("net-job: did not finish");
+    int r = j->result;
+    net_job_release();
+    if (net_job_busy()) panic("net-job: still busy after release");
+    kprintf("[OK] net-job async http (result %d), busy-guard ok\n", r);
+}
+
 static void net_selftest(void) {
     char a[16];
     uint8_t mac[6];
@@ -126,5 +143,5 @@ void net_init(void) {
             ip_to_str(net_if.mask, b), ip_to_str(net_if.gw, c), ip_to_str(net_if.dns, d));
 
     // ping/DNS/HTTP go out to the internet and cost ~1.3 s: only in test mode.
-    if (boot_is_test()) net_selftest();
+    if (boot_is_test()) { net_selftest(); job_selftest(); }
 }

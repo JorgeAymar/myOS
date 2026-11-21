@@ -114,6 +114,7 @@ void wm_close(struct window *w) {
     w->drawn_focused = false;
     zorder_remove(w);
     refresh_focus();
+    if (w->app->closed) w->app->closed(w);
 }
 
 void wm_minimize(struct window *w) {

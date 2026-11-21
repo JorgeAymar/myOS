@@ -154,14 +154,6 @@ static void paint(struct window *w) {
     wm_invalidate_all(w);
 }
 
-// Repaint and present right now (used before blocking network calls).
-static void flush(struct window *w) {
-    scroll = 0;
-    cur_line_idx = -1;      // no cursor while a command runs
-    paint(w);
-    comp_render();
-}
-
 // Rebuilds the editable part of the current line(s) from ed[].
 static void redraw_input(void) {
     head = prompt_head;
@@ -402,30 +394,53 @@ static void cmd_ifconfig(void) {
     out("      dns  %s", ip_to_str(c.dns, b));
 }
 
+// ---- asynchronous network commands (fetch, ping) ----
+// The command starts a net job and returns; tick() prints the result when the
+// job finishes and then shows the prompt again. While busy, only Ctrl+C works.
+enum { JOB_NONE = 0, JOB_FETCH, JOB_PING };
+static int job_kind;
+static char job_tok;
+static int ping_seq;
+static char ping_host[96], ping_name[96];
+
 static void cmd_ping(struct window *w, int argc, char **argv) {
+    (void)w;
     if (argc < 2) { err("usage: ping <ip|host>"); return; }
-    uint32_t ip;
+    if (strlen(argv[1]) >= sizeof ping_host) { err("ping: name too long"); return; }
+    strcpy(ping_host, argv[1]);
+    strcpy(ping_name, argv[1]);
+    ping_seq = 1;
+    if (!net_job_start_ping(&job_tok, ping_host, 2000)) { err("ping: network busy, try again"); return; }
+    job_kind = JOB_PING;
+}
+
+static void ping_done(struct net_job *j) {
     char b[20];
-    if (!ip_parse(argv[1], &ip)) {
-        out("resolving %s ...", argv[1]);
-        flush(w);
-        int e = dns_resolve(argv[1], &ip, 2000);
-        if (e < 0) {
-            err("ping: cannot resolve %s (%s)", argv[1],
-                e == NET_ETIMEDOUT ? "timed out" : e == NET_ENOTFOUND ? "not found" : "error");
+    int r = j->result;
+    if (ping_seq == 1) {
+        if (j->resolve_failed) {
+            err("ping: cannot resolve %s (%s)", ping_name,
+                r == NET_ETIMEDOUT ? "timed out" : r == NET_ENOTFOUND ? "not found" : "error");
+            net_job_release();
+            job_kind = JOB_NONE;
             return;
         }
+        out("PING %s (%s)", ping_name, ip_to_str(j->ip, b));
+        ip_to_str(j->ip, ping_host);            // later probes skip the DNS lookup
     }
-    out("PING %s (%s)", argv[1], ip_to_str(ip, b));
-    for (int i = 1; i <= 3; i++) {
-        flush(w);
-        int r = net_ping(ip, 2000);
-        if (r >= 0) out("reply from %s: seq=%d time=%d ms", ip_to_str(ip, b), i, r);
-        else err("seq=%d: %s", i, r == NET_ETIMEDOUT ? "request timed out" : "failed");
+    if (r >= 0) out("reply from %s: seq=%d time=%d ms", ip_to_str(j->ip, b), ping_seq, r);
+    else err("seq=%d: %s", ping_seq, r == NET_ETIMEDOUT ? "request timed out" : "failed");
+    net_job_release();
+    if (ping_seq < 3) {
+        ping_seq++;
+        if (net_job_start_ping(&job_tok, ping_host, 2000)) return;
+        err("ping: network busy");
     }
+    job_kind = JOB_NONE;
 }
 
 static void cmd_fetch(struct window *w, int argc, char **argv) {
+    (void)w;
     if (argc < 2) { err("usage: fetch <host> [path]   (HTTP on port 80 only, no HTTPS)"); return; }
     char host[96], path[160];
     const char *h = argv[1];
@@ -440,15 +455,18 @@ static void cmd_fetch(struct window *w, int argc, char **argv) {
     const char *p = argc > 2 ? argv[2] : sl ? sl : "/";
     ksnprintf(path, sizeof path, "%s%s", p[0] == '/' ? "" : "/", p);
 
-    char *buf = kmalloc(FETCH_BUF);
-    if (!buf) { err("fetch: out of memory"); return; }
+    if (!net_job_start_http(&job_tok, host, path, FETCH_BUF, 10000)) { err("fetch: network busy, try again"); return; }
     out("GET http://%s%s ...", host, path);
-    flush(w);
-    int n = http_get_timeout(host, path, buf, FETCH_BUF, 10000);
+    job_kind = JOB_FETCH;
+}
+
+static void fetch_done(struct net_job *j) {
+    char *buf = j->buf;
+    int n = j->result;
     if (n < 0) {
         err("fetch: failed (%s)", n == NET_ETIMEDOUT ? "timed out" : n == NET_ENOTFOUND ? "host not found"
                                  : n == NET_ERESET ? "connection reset" : "error");
-        kfree(buf);
+        net_job_release();
         return;
     }
     buf[FETCH_BUF - 1] = 0;
@@ -473,7 +491,7 @@ static void cmd_fetch(struct window *w, int argc, char **argv) {
             q = e2 + 1;
         }
     }
-    kfree(buf);
+    net_job_release();
 }
 
 static void cmd_date(void) {
@@ -559,7 +577,7 @@ static void submit(struct window *w) {
         hist_cnt++;
     }
     run(w, line);
-    show_prompt();
+    if (!job_kind) show_prompt();
 }
 
 static void key(struct window *w, const struct input_event *ev) {
@@ -567,6 +585,18 @@ static void key(struct window *w, const struct input_event *ev) {
     int k = ev->keycode;
     bool changed = true;
     bool skip_redraw = false;
+
+    if (job_kind) {                      // a network command is running
+        if ((ev->mods & MOD_CTRL) && k == 'c') {
+            net_job_cancel(&job_tok);
+            job_kind = JOB_NONE;
+            puts_k("^C\n", K_NORMAL);
+            show_prompt();
+            scroll = 0;
+            paint(w);
+        }
+        return;
+    }
 
     if (ev->mods & MOD_CTRL) {
         switch (k) {
@@ -635,11 +665,26 @@ static void mouse(struct window *w, int x, int y, uint8_t buttons, int wheel) {
 static void tick(struct window *w, uint64_t now, bool new_second) {
     (void)new_second;
     if (!ready) return;
+    if (job_kind) {
+        struct net_job *j = net_job_done(&job_tok);
+        if (j) {
+            if (job_kind == JOB_FETCH) { fetch_done(j); job_kind = JOB_NONE; }
+            else ping_done(j);
+            if (!job_kind) show_prompt();
+            scroll = 0;
+            paint(w);
+        }
+    }
     uint64_t phase = now / 500;
     if (phase == last_blink) return;
     last_blink = phase;
     blink_on = (phase & 1) == 0;
     paint(w);
+}
+
+static void closed(struct window *w) {
+    (void)w;
+    if (job_kind) { net_job_cancel(&job_tok); job_kind = JOB_NONE; }
 }
 
 static void focus(struct window *w, bool f) {
@@ -648,6 +693,8 @@ static void focus(struct window *w, bool f) {
 }
 
 static void init(struct window *w) {
+    net_job_cancel(&job_tok);
+    job_kind = JOB_NONE;
     sb = kmalloc((size_t)SB_LINES * COLS);
     lenv = kmalloc(SB_LINES * 3);
     if (!sb || !lenv) { kprintf("[FAIL] terminal: out of memory\n"); return; }
@@ -672,5 +719,5 @@ struct app app_terminal = {
     .client_w = CLIENT_W, .client_h = CLIENT_H,
     .icon_top = RGB(0x5a, 0x5a, 0x60), .icon_bottom = RGB(0x1c, 0x1c, 0x1e),
     .icon_glyph = glyph,
-    .init = init, .paint = paint, .key = key, .mouse = mouse, .tick = tick, .focus = focus,
+    .init = init, .paint = paint, .key = key, .mouse = mouse, .tick = tick, .focus = focus, .closed = closed,
 };

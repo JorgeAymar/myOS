@@ -112,7 +112,8 @@ void desktop_init(void) {
 
 void desktop_frame(void) {
     if (!ready) return;
-    net_poll();   // keep the network stack serviced (ARP/ICMP replies, TCP) after boot
+    net_job_poll();
+    net_poll_try();   // keep the network stack serviced (ARP/ICMP replies, TCP) after boot
     struct input_event ev;
     for (int n = 0; n < 512 && input_poll(&ev); n++) handle(&ev);
 

@@ -297,115 +297,163 @@ static int dechunk(char *body, int len) {
     return (int)(o - body);
 }
 
-// Fetches and displays url (http only), following redirects.
-static void load(struct window *w, const char *url_in) {
+// ---- loading: asynchronous state machine ----
+// begin() validates an address and starts a net job; tick() calls finish()
+// when the job is done (processing the response, following redirects).
+
+static char job_tok;                 // owner token for the net job
+static char pend_url[URL_MAX];       // address being fetched
+static int pend_hop;
+
+static void hist_sync(void);
+
+static void end_load(struct window *w) {
+    loading = false;
+    hist_sync();
+    paint(w);
+}
+
+static void begin(struct window *w, const char *url_in, int hop) {
     char url[URL_MAX];
     strncpy(url, url_in, sizeof url - 1);
     url[sizeof url - 1] = 0;
+    loading = false;
 
-    for (int hop = 0; hop <= MAX_REDIR; hop++) {
-        strcpy(cur_url, url);
-        set_addr(url);
-        addr_focus = false; addr_sel = false;
-        if (strcmp(url, "about:home") == 0) {
-            set_status("about:home");
-            show_html(w, HOME_HTML, false);
-            return;
-        }
-        bool https;
-        char host[96], path[URL_MAX];
-        if (!split_url(url, &https, host, sizeof host, path, sizeof path)) {
-            set_status("Unsupported address");
-            error_page(w, "Unsupported address", "This browser only opens http:// addresses.", url);
-            return;
-        }
-        if (https) { set_status("HTTPS not supported"); https_page(w, url); return; }
-        if (strchr(host, ':')) {
-            const char *c = strchr(host, ':');
-            if (strcmp(c, ":80") != 0) {
-                set_status("Unsupported port");
-                error_page(w, "Unsupported port", "Only port 80 is supported.", url);
-                return;
-            }
-            host[c - host] = 0;
-        }
-        struct net_ifconfig nc;
-        if (!net_ifconfig(&nc) || !nc.configured) {
-            set_status("No network");
-            error_page(w, "No network connection",
-                       "The network interface is not configured (no DHCP lease).", url);
-            return;
-        }
-        char *buf = kmalloc(RESP_MAX);
-        if (!buf) { set_status("Out of memory"); error_page(w, "Out of memory", "Could not allocate the receive buffer.", url); return; }
-
-        ksnprintf(status, sizeof status, "Loading %s ...", url);
-        loading = true;
-        paint(w);
-        comp_render();
-        int n = http_get_timeout(host, path, buf, RESP_MAX, 5000);
-        loading = false;
-        if (n < 0) {
-            kfree(buf);
-            const char *why = n == NET_ETIMEDOUT ? "The server did not answer in time. It may only accept HTTPS, which myOS does not support yet."
-                            : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
-                            : n == NET_ERESET    ? "The connection was reset by the server. It may only accept HTTPS, which myOS does not support yet."
-                                                 : "A network error occurred.";
-            set_status("Load failed");
-            error_page(w, "Cannot open the page", why, url);
-            return;
-        }
-        buf[n < RESP_MAX ? n : RESP_MAX - 1] = 0;
-
-        // status line + headers
-        char *hend = strstr(buf, "\r\n\r\n");
-        int sep = 4;
-        if (!hend) { hend = strstr(buf, "\n\n"); sep = 2; }
-        if (!hend || !starts_ci(buf, "http/")) {
-            kfree(buf);
-            set_status("Bad response");
-            error_page(w, "Invalid response", "The server sent something that is not valid HTTP.", url);
-            return;
-        }
-        char *body = hend + sep;
-        const char *sp = strchr(buf, ' ');
-        int code = sp ? atoi(sp + 1) : 0;
-
-        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
-            char loc[URL_MAX];
-            char next[URL_MAX];
-            if (hdr_get_raw(buf, hend, "location", loc, sizeof loc) && resolve(url, loc, next)) {
-                kfree(buf);
-                strcpy(url, next);
-                continue;
-            }
-        }
-
-        char ctype[96], enc[64];
-        bool have_ct = hdr_get(buf, hend, "content-type", ctype, sizeof ctype);
-        int blen = n - (int)(body - buf);
-        if (blen < 0) blen = 0;
-        if (hdr_get(buf, hend, "transfer-encoding", enc, sizeof enc) && strstr(enc, "chunked"))
-            blen = dechunk(body, blen);
-
-        if (!have_ct || strstr(ctype, "text/html") || strstr(ctype, "application/xhtml")) {
-            show_html(w, body, false);
-        } else if (strstr(ctype, "text/plain")) {
-            show_html(w, body, true);
-        } else {
-            char ct[120];
-            ksnprintf(ct, sizeof ct, "Content type: %s", ctype);
-            error_page(w, "Unsupported content type",
-                       "This browser can only display HTML and plain text.", ct);
-        }
-        (void)blen;
-        kfree(buf);
-        ksnprintf(status, sizeof status, "%s", url);
-        if (code >= 400 && !(doc && doc->nruns)) set_status("Error");
+    if (hop > MAX_REDIR) {
+        set_status("Too many redirects");
+        error_page(w, "Too many redirects", "The server redirected the browser too many times.", url);
+        end_load(w);
         return;
     }
-    set_status("Too many redirects");
-    error_page(w, "Too many redirects", "The server redirected the browser too many times.", url);
+    strcpy(cur_url, url);
+    set_addr(url);
+    addr_focus = false; addr_sel = false;
+    if (strcmp(url, "about:home") == 0) {
+        set_status("about:home");
+        show_html(w, HOME_HTML, false);
+        end_load(w);
+        return;
+    }
+    bool https;
+    char host[96], path[URL_MAX];
+    if (!split_url(url, &https, host, sizeof host, path, sizeof path)) {
+        set_status("Unsupported address");
+        error_page(w, "Unsupported address", "This browser only opens http:// addresses.", url);
+        end_load(w);
+        return;
+    }
+    if (https) { set_status("HTTPS not supported"); https_page(w, url); end_load(w); return; }
+    if (strchr(host, ':')) {
+        const char *c = strchr(host, ':');
+        if (strcmp(c, ":80") != 0) {
+            set_status("Unsupported port");
+            error_page(w, "Unsupported port", "Only port 80 is supported.", url);
+            end_load(w);
+            return;
+        }
+        host[c - host] = 0;
+    }
+    struct net_ifconfig nc;
+    if (!net_ifconfig(&nc) || !nc.configured) {
+        set_status("No network");
+        error_page(w, "No network connection",
+                   "The network interface is not configured (no DHCP lease).", url);
+        end_load(w);
+        return;
+    }
+    if (!net_job_start_http(&job_tok, host, path, RESP_MAX, 5000)) {
+        set_status("Network busy");
+        error_page(w, "Network busy", "Another network request is still running. Try again in a moment.", url);
+        end_load(w);
+        return;
+    }
+    strcpy(pend_url, url);
+    pend_hop = hop;
+    ksnprintf(status, sizeof status, "Loading %s ...", url);
+    loading = true;
+    paint(w);
+}
+
+static void finish(struct window *w, struct net_job *j) {
+    char url[URL_MAX];
+    strcpy(url, pend_url);
+    char *buf = j->buf;
+    int n = j->result;
+    loading = false;
+    if (n < 0) {
+        const char *why = n == NET_ETIMEDOUT ? "The server did not answer in time. It may only accept HTTPS, which myOS does not support yet."
+                        : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
+                        : n == NET_ERESET    ? "The connection was reset by the server. It may only accept HTTPS, which myOS does not support yet."
+                                             : "A network error occurred.";
+        net_job_release();
+        set_status("Load failed");
+        error_page(w, "Cannot open the page", why, url);
+        end_load(w);
+        return;
+    }
+    buf[n < RESP_MAX ? n : RESP_MAX - 1] = 0;
+
+    // status line + headers
+    char *hend = strstr(buf, "\r\n\r\n");
+    int sep = 4;
+    if (!hend) { hend = strstr(buf, "\n\n"); sep = 2; }
+    if (!hend || !starts_ci(buf, "http/")) {
+        net_job_release();
+        set_status("Bad response");
+        error_page(w, "Invalid response", "The server sent something that is not valid HTTP.", url);
+        end_load(w);
+        return;
+    }
+    char *body = hend + sep;
+    const char *sp = strchr(buf, ' ');
+    int code = sp ? atoi(sp + 1) : 0;
+
+    if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+        char loc[URL_MAX];
+        char next[URL_MAX];
+        if (hdr_get_raw(buf, hend, "location", loc, sizeof loc) && resolve(url, loc, next)) {
+            net_job_release();
+            begin(w, next, pend_hop + 1);
+            return;
+        }
+    }
+
+    char ctype[96], enc[64];
+    bool have_ct = hdr_get(buf, hend, "content-type", ctype, sizeof ctype);
+    int blen = n - (int)(body - buf);
+    if (blen < 0) blen = 0;
+    if (hdr_get(buf, hend, "transfer-encoding", enc, sizeof enc) && strstr(enc, "chunked"))
+        blen = dechunk(body, blen);
+
+    if (!have_ct || strstr(ctype, "text/html") || strstr(ctype, "application/xhtml")) {
+        show_html(w, body, false);
+    } else if (strstr(ctype, "text/plain")) {
+        show_html(w, body, true);
+    } else {
+        char ct[120];
+        ksnprintf(ct, sizeof ct, "Content type: %s", ctype);
+        error_page(w, "Unsupported content type",
+                   "This browser can only display HTML and plain text.", ct);
+    }
+    (void)blen;
+    net_job_release();
+    ksnprintf(status, sizeof status, "%s", url);
+    if (code >= 400 && !(doc && doc->nruns)) set_status("Error");
+    end_load(w);
+}
+
+static void stop_load(struct window *w) {
+    if (!loading) return;
+    net_job_cancel(&job_tok);
+    loading = false;
+    set_status("Stopped");
+    set_addr(cur_url);
+    paint(w);
+}
+
+// Starts fetching url (http only); the result is handled from tick().
+static void load(struct window *w, const char *url) {
+    begin(w, url, 0);
 }
 
 // ---- navigation with history ----
@@ -414,7 +462,15 @@ static void hist_sync(void) {
     if (hist_n > 0) strcpy(hist[hist_i], cur_url);
 }
 
+static bool busy_loading(struct window *w) {
+    if (!loading) return false;
+    set_status("Still loading - press Esc to stop");
+    paint(w);
+    return true;
+}
+
 static void navigate(struct window *w, const char *url) {
+    if (busy_loading(w)) return;
     if (hist_n > 0 && hist_i < hist_n - 1) hist_n = hist_i + 1;
     if (hist_n >= HIST_N) {
         memmove(hist[0], hist[1], (size_t)(HIST_N - 1) * URL_MAX);
@@ -423,26 +479,22 @@ static void navigate(struct window *w, const char *url) {
     strcpy(hist[hist_n], url);
     hist_i = hist_n++;
     load(w, url);
-    hist_sync();
-    paint(w);
 }
 
 static void go_to(struct window *w, int idx) {
     if (idx < 0 || idx >= hist_n) return;
+    if (busy_loading(w)) return;
     hist_i = idx;
     char u[URL_MAX];
     strcpy(u, hist[idx]);
     load(w, u);
-    hist_sync();
-    paint(w);
 }
 
 static void reload(struct window *w) {
+    if (busy_loading(w)) return;
     char u[URL_MAX];
     strcpy(u, cur_url);
     load(w, u);
-    hist_sync();
-    paint(w);
 }
 
 // Turns what the user typed into a URL. Returns false if the page was an error.
@@ -596,6 +648,7 @@ static void key(struct window *w, const struct input_event *ev) {
     int k = ev->keycode;
     int vh = view_rect(w).h;
 
+    if (loading && k == KEY_ESC) { stop_load(w); return; }
     if (ev->mods & MOD_CTRL) {
         if (k == 'l') { addr_focus = true; caret_on = true; addr_cur = addr_len; addr_sel = addr_len > 0; repaint_toolbar(w); }
         else if (k == 'r') reload(w);
@@ -698,7 +751,16 @@ static void mouse(struct window *w, int x, int y, uint8_t buttons, int wheel) {
 
 static void tick(struct window *w, uint64_t now_ms, bool new_second) {
     (void)now_ms;
+    if (loading) {
+        struct net_job *j = net_job_done(&job_tok);
+        if (j) finish(w, j);
+    }
     if (new_second && addr_focus) { caret_on = !caret_on; repaint_toolbar(w); }
+}
+
+static void closed(struct window *w) {
+    (void)w;
+    if (loading) { net_job_cancel(&job_tok); loading = false; }
 }
 
 static void focus(struct window *w, bool focused) {
@@ -715,6 +777,7 @@ static void init(struct window *w) {
     if (!doc) doc = html_new();
     if (!doc) { kprintf("[FAIL] browser: out of memory\n"); return; }
     hist_n = hist_i = 0;
+    net_job_cancel(&job_tok);
     loading = false; scroll = 0;
     navigate(w, "about:home");
     addr_focus = true; caret_on = true;
@@ -729,6 +792,6 @@ struct app app_browser = {
     .client_w = CLIENT_W, .client_h = CLIENT_H,
     .icon_top = RGB(0x5e, 0xe0, 0xf6), .icon_bottom = RGB(0x1a, 0x6c, 0xf0),
     .icon_glyph = glyph,
-    .init = init, .paint = paint, .key = key, .mouse = mouse, .tick = tick, .focus = focus,
+    .init = init, .paint = paint, .key = key, .mouse = mouse, .tick = tick, .focus = focus, .closed = closed,
     .title = title,
 };

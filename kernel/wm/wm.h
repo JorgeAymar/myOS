@@ -23,6 +23,7 @@ struct app {
     void (*mouse)(struct window *w, int x, int y, uint8_t buttons, int wheel);
     void (*tick)(struct window *w, uint64_t now_ms, bool new_second);
     void (*focus)(struct window *w, bool focused);
+    void (*closed)(struct window *w);                      // optional: after the window was closed
     const char *(*title)(struct window *w);                // optional: title bar text (default: name); call wm_paint_titlebar(w) after it changes
     struct window *win;
 };

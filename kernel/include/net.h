@@ -80,3 +80,34 @@ void tcp_close(struct tcp_conn *c);
 int http_get(const char *host, const char *path, char *buf, size_t len);
 int http_get_timeout(const char *host, const char *path, char *buf, size_t len,
                      uint32_t timeout_ms);
+
+// ---- asynchronous jobs (netjob.c) ----
+// One blocking network operation runs on a worker thread so the GUI stays
+// alive. Only one job at a time. The job owns the receive buffer; the owner
+// token is any unique pointer. Typical use: start, poll net_job_done(owner)
+// each frame, read the result, then net_job_release().
+enum net_job_state { NJ_IDLE = 0, NJ_RUNNING, NJ_DONE };
+enum net_job_kind { NJ_HTTP, NJ_PING };
+struct net_job {
+    volatile enum net_job_state state;
+    enum net_job_kind kind;
+    const void *owner;
+    bool cancelled;
+    char host[96], path[256];
+    char *buf;                 // HTTP: response (NUL-terminated), job-owned
+    size_t buflen, length;
+    uint32_t timeout_ms;
+    int result;                // HTTP: bytes or negative error; ping: rtt ms or negative
+    uint32_t ip;               // ping: resolved address
+    bool resolve_failed;       // ping: DNS failed (result is the DNS error)
+};
+bool net_job_start_http(const void *owner, const char *host, const char *path,
+                        size_t buflen, uint32_t timeout_ms);
+bool net_job_start_ping(const void *owner, const char *host, uint32_t timeout_ms);
+bool net_job_busy(void);                         // running, or done and not released
+struct net_job *net_job_done(const void *owner); // finished job of owner, else NULL
+bool net_job_running(const void *owner);
+void net_job_release(void);                      // free buffer, allow a new job
+void net_job_cancel(const void *owner);          // discard the result (may still run)
+void net_job_poll(void);                         // frees cancelled finished jobs
+void net_poll_try(void);                         // net_poll() unless a job holds the stack
