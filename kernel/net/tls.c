@@ -20,17 +20,26 @@ int https_get_timeout(const char *host, const char *path, char *buf, size_t len,
                       uint32_t timeout_ms) {
     if (!buf || len == 0 || !host) return NET_ERR;
     buf[0] = 0;
-    uint64_t deadline = timer_ticks_ms() + timeout_ms;
+    // Phase timing, printed once as "[tls] timing dns=..ms tcp=..ms hs=..ms ttfb=..ms body=..KB/..ms":
+    //   dns   = name resolution
+    //   tcp   = TCP three-way handshake to port 443
+    //   hs    = from TCP established until the TLS handshake is done (first app byte can be sent)
+    //   ttfb  = from request sent until the first response byte is decrypted
+    //   body  = application bytes received (KB) and ms from the first byte to the end
+    uint64_t t_start = timer_ticks_ms(), t_dns = 0, t_tcp = 0, t_hs = 0, t_req = 0, t_first = 0;
+    uint64_t deadline = t_start + timeout_ms;
     uint32_t ip;
     int r = dns_resolve(host, &ip, timeout_ms);
     if (r < 0) return r;
     uint64_t now = timer_ticks_ms();
+    t_dns = now;
     if (now >= deadline) return NET_ETIMEDOUT;
 
     struct tls_ctx *t = kmalloc(sizeof *t);
     if (!t) return NET_ERR;
     struct tcp_conn *c = tcp_connect(ip, 443, (uint32_t)(deadline - now));
     if (!c) { kfree(t); return NET_ETIMEDOUT; }
+    t_tcp = timer_ticks_ms();
 
     char req[512];
     int rn = ksnprintf(req, sizeof req,
@@ -73,22 +82,25 @@ int https_get_timeout(const char *host, const char *path, char *buf, size_t len,
             size_t room = len - 1 - got;
             size_t k = n < room ? n : room;
             memcpy(buf + got, b, k);
+            if (!got && k) t_first = timer_ticks_ms();
             got += k;
             br_ssl_engine_recvapp_ack(eng, n);
             if (got + 1 >= len) { full = true; break; }   // truncate like http.c
         } else if ((st & BR_SSL_SENDAPP) && reqoff < (size_t)rn) {
+            if (!t_hs) t_hs = timer_ticks_ms();
             b = br_ssl_engine_sendapp_buf(eng, &n);
             size_t k = (size_t)rn - reqoff;
             if (k > n) k = n;
             memcpy(b, req + reqoff, k);
             reqoff += k;
             br_ssl_engine_sendapp_ack(eng, k);
-            if (reqoff == (size_t)rn) br_ssl_engine_flush(eng, 0);
+            if (reqoff == (size_t)rn) { br_ssl_engine_flush(eng, 0); t_req = timer_ticks_ms(); }
         } else if (st & BR_SSL_RECVREC) {
             b = br_ssl_engine_recvrec_buf(eng, &n);
             r = tcp_recv(c, b, n, left);
             if (r > 0) br_ssl_engine_recvrec_ack(eng, (size_t)r);
-            else if (r == 0) br_ssl_engine_close(eng);    // FIN without close_notify
+            else if (r == 0) { br_ssl_engine_close(eng); break; }   // FIN (Connection: close) without close_notify: done.
+            // Do NOT keep looping: the closed engine still reports RECVREC and would spin to the deadline.
             else { result = got ? 0 : r; break; }
         } else {
             // SENDAPP with the request fully sent: nothing to do, wait for data.
@@ -101,9 +113,19 @@ int https_get_timeout(const char *host, const char *path, char *buf, size_t len,
         if (err != BR_ERR_OK && !(err == BR_ERR_IO && got)) {
             kprintf("[tls] error %d\n", err);
             result = NET_ERR;
-        }
+        } else if (!got) result = NET_ECLOSED;
     }
     buf[got] = 0;
+    {
+        uint64_t te = timer_ticks_ms();
+        if (!t_hs) t_hs = te;
+        if (!t_req) t_req = t_hs;
+        if (!t_first) t_first = te;
+        kprintf("[tls] timing dns=%lums tcp=%lums hs=%lums ttfb=%lums body=%luKB/%lums\n",
+                (unsigned long)(t_dns - t_start), (unsigned long)(t_tcp - t_dns),
+                (unsigned long)(t_hs - t_tcp), (unsigned long)(t_first - t_req),
+                (unsigned long)(got / 1024), (unsigned long)(te - t_first));
+    }
     tcp_close(c);
     kfree(t);
     if (result < 0 && !got) return result;
