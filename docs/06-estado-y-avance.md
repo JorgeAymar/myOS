@@ -60,8 +60,10 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 
 - **Segunda revisión (/review completo):** corregidos un desborde de pila al normalizar URLs, el guardia de archivo truncado del Editor (rutas con `./`), Cortar con selección mayor al portapapeles y un `<head>` sin cerrar que congelaba la interfaz. Nuevos autotests de arranque para `vfs_path_join`, `vfs_copy`, `vfs_rename` y los helpers de string; el navegador avisa que el sitio puede exigir HTTPS.
 
+- **Hilo de red:** el Navegador y `fetch`/`ping` de la Terminal cargan en un hilo aparte (`kernel/net/netjob.c`, mutex de red); la interfaz ya no se congela. Esc cancela una carga. Autotest `[OK] net-job`.
+
 ## Próximos pasos
 
 1. Fase 13: TLS (BearSSL) y HTTPS nativo en el navegador.
 2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
-3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra, `ping`, `fetch` y la carga de páginas bloquean la interfaz hasta terminar (falta un hilo de red).
+3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
