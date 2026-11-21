@@ -347,9 +347,9 @@ static void load(struct window *w, const char *url_in) {
         loading = false;
         if (n < 0) {
             kfree(buf);
-            const char *why = n == NET_ETIMEDOUT ? "The server did not answer in time."
+            const char *why = n == NET_ETIMEDOUT ? "The server did not answer in time. It may only accept HTTPS, which myOS does not support yet."
                             : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
-                            : n == NET_ERESET    ? "The connection was reset by the server."
+                            : n == NET_ERESET    ? "The connection was reset by the server. It may only accept HTTPS, which myOS does not support yet."
                                                  : "A network error occurred.";
             set_status("Load failed");
             error_page(w, "Cannot open the page", why, url);

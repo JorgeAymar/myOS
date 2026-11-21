@@ -167,6 +167,66 @@ static void fat32_selftest(void) {
             (unsigned long)total);
 }
 
+
+// vfs_path_join and the string helpers added for the apps (no disk needed).
+static void helpers_selftest(void) {
+    char out[VFS_PATH_MAX];
+    check(vfs_path_join("/a/b", "../c", out), "path_join ..");
+    if (strcmp(out, "/a/c")) panic("fs selftest: path_join .. gave %s", out);
+    check(vfs_path_join("/a", "/x//y/./z", out), "path_join abs");
+    if (strcmp(out, "/x/y/z")) panic("fs selftest: path_join abs gave %s", out);
+    char longrel[VFS_PATH_MAX * 2 + 8];
+    memset(longrel, 'a', sizeof longrel - 1); longrel[sizeof longrel - 1] = 0;
+    if (vfs_path_join("/", longrel, out) >= 0) panic("fs selftest: path_join accepted an overlong path");
+    if (vfs_path_join("/", NULL, out) != VFS_EINVAL) panic("fs selftest: path_join accepted NULL");
+
+    const char *h = "hello world";
+    if (strstr(h, "") != h || strstr(h, "wor") != h + 6 || strstr(h, "xyz")) panic("fs selftest: strstr");
+    if (strrchr(h, 0) != h + 11 || strrchr(h, 'o') != h + 7 || strrchr(h, 'z')) panic("fs selftest: strrchr");
+    if (atoi("  -12x") != -12 || atoi("42") != 42 || atoi("") != 0) panic("fs selftest: atoi");
+    if (strcasecmp("AbC", "aBc") != 0 || strcasecmp("a", "b") >= 0) panic("fs selftest: strcasecmp");
+    kprintf("[OK] vfs path_join + string helpers\n");
+}
+
+static void put_file(const char *path, const char *text) {
+    struct vfs_file *f;
+    check(vfs_open(path, VFS_O_WRITE | VFS_O_CREATE | VFS_O_TRUNC, &f), path);
+    check((int)vfs_write(f, text, strlen(text)), "write");
+    vfs_close(f);
+}
+
+// cp/mv guard rails: same-file, directory target, rename semantics.
+static void vfs_ops_selftest(void) {
+    const char *dir = "/disk/vops", *a = "/disk/vops/a.txt", *b = "/disk/vops/b.txt", *c = "/disk/vops/c.txt";
+    struct vfs_stat st;
+    check(vfs_mkdir(dir), "mkdir vops");
+    put_file(a, "alpha");
+
+    if (vfs_copy(a, a) != VFS_EINVAL) panic("fs selftest: copy onto itself not refused");
+    if (vfs_copy(a, "/disk/vops/./a.txt") != VFS_EINVAL) panic("fs selftest: copy onto itself (alias) not refused");
+    expect_file(a, "alpha");                                  // still intact
+    if (vfs_rename(a, a) != VFS_EINVAL) panic("fs selftest: rename onto itself not refused");
+    expect_file(a, "alpha");
+    if (vfs_copy(a, dir) != VFS_EISDIR) panic("fs selftest: copy onto a directory not refused");
+
+    check(vfs_copy(a, b), "copy a b");
+    expect_file(b, "alpha");
+    put_file(b, "beta");                                      // copy must overwrite an existing target
+    check(vfs_copy(a, b), "copy over existing");
+    expect_file(b, "alpha");
+
+    check(vfs_rename(b, c), "rename b c");
+    if (vfs_stat(b, &st) != VFS_ENOENT) panic("fs selftest: rename left the source");
+    expect_file(c, "alpha");
+    if (vfs_rename("/disk/vops/missing", "/disk/vops/d.txt") >= 0) panic("fs selftest: rename of a missing file succeeded");
+    if (vfs_stat("/disk/vops/d.txt", &st) != VFS_ENOENT) panic("fs selftest: failed rename created its target");
+
+    check(vfs_unlink(a), "unlink a");
+    check(vfs_unlink(c), "unlink c");
+    check(vfs_unlink(dir), "rmdir vops");
+    kprintf("[OK] vfs copy/rename guards\n");
+}
+
 void fs_init(void) {
     vfs_init();
     int r = initrd_mount("/");
@@ -174,6 +234,7 @@ void fs_init(void) {
         kprintf("[WARN] fs: initrd not available (%s), empty root mounted\n", vfs_strerror(r));
     } else {
         initrd_selftest();
+        helpers_selftest();
         list_dir("/", NULL, NULL);
         kprintf("[OK] fs initrd files=%d entries=%d\n", initrd_file_count(), r);
     }
@@ -191,5 +252,5 @@ void fs_init(void) {
     }
     kprintf("[OK] fat32 mounted /disk %s\n", info);
     // The write/verify test modifies the disk: only in test mode (make test uses a fresh copy).
-    if (boot_is_test()) fat32_selftest();
+    if (boot_is_test()) { fat32_selftest(); vfs_ops_selftest(); }
 }

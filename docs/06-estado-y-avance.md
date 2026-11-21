@@ -58,6 +58,8 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 - **`kprintf` atómico** por línea (interrupciones desactivadas durante la escritura serie).
 - **Revisión de código** de la fase 11: corregidos `cp`/`mv` sobre el mismo archivo, `rename` que podía borrar el destino, `rm .`, nombres largos en Archivos, guardar un archivo abierto truncado y el menú que quedaba abierto al cambiar el foco.
 
+- **Segunda revisión (/review completo):** corregidos un desborde de pila al normalizar URLs, el guardia de archivo truncado del Editor (rutas con `./`), Cortar con selección mayor al portapapeles y un `<head>` sin cerrar que congelaba la interfaz. Nuevos autotests de arranque para `vfs_path_join`, `vfs_copy`, `vfs_rename` y los helpers de string; el navegador avisa que el sitio puede exigir HTTPS.
+
 ## Próximos pasos
 
 1. Fase 13: TLS (BearSSL) y HTTPS nativo en el navegador.
