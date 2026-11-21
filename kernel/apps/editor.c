@@ -85,15 +85,16 @@ static int cols_now(void) { return app_editor.win ? text_cols(app_editor.win) : 
 static void set_msg(const char *m) { ksnprintf(msg, sizeof msg, "%s", m); }
 
 // ---- clipboard ----
-void clipboard_set(const char *s, size_t n) {
-    if (n > CLIP_MAX) n = CLIP_MAX;
+bool clipboard_set(const char *s, size_t n) {
+    if (n > CLIP_MAX) return false;      // never keep a truncated copy
     char *nb = kmalloc(n + 1);
-    if (!nb) return;
+    if (!nb) return false;
     if (n && s) memcpy(nb, s, n);
     nb[n] = 0;
     kfree(clip);
     clip = nb;
     clip_len = n;
+    return true;
 }
 
 const char *clipboard_get(size_t *n) {
@@ -573,9 +574,16 @@ void editor_open(const char *p) {
     repaint();
 }
 
+// Same file after normalization ("/disk/./a" == "/disk//a").
+static bool same_file(const char *a, const char *b) {
+    char na[VFS_PATH_MAX], nb[VFS_PATH_MAX];
+    if (vfs_path_join("/", a, na) < 0 || vfs_path_join("/", b, nb) < 0) return !strcmp(a, b);
+    return !strcmp(na, nb);
+}
+
 static bool write_file(const char *target) {
     struct vfs_file *f;
-    if (cut_load && !strcmp(target, path)) {
+    if (cut_load && same_file(target, path)) {
         set_msg("Not saved: file was opened truncated. Use Save As");
         return false;
     }
@@ -597,6 +605,7 @@ static bool write_file(const char *target) {
         return false;
     }
     ksnprintf(path, sizeof path, "%s", target);
+    cut_load = false;                      // the buffer is now the whole content of the new file
     modified = false;
     ksnprintf(msg, sizeof msg, "Saved %u bytes", (unsigned)len);
     return true;
@@ -780,7 +789,10 @@ static void begin_move(bool shift) {
 
 static void do_copy(bool cut) {
     if (!has_sel()) return;
-    clipboard_set(buf + sel_lo(), sel_hi() - sel_lo());
+    if (!clipboard_set(buf + sel_lo(), sel_hi() - sel_lo())) {
+        set_msg("Selection too large for the clipboard");
+        return;                            // never delete what could not be copied
+    }
     if (cut) replace_sel(NULL, 0, false);
 }
 

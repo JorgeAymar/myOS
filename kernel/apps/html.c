@@ -33,6 +33,7 @@ struct lay {
     int width, lm, x, y, gap;
     int maxasc, maxdesc, first, nlines;
     bool has, space, stop, skip_nl;
+    bool no_head_end;               // searched once: no </head anywhere
     int bold, ital, mono, pre, hf, quote, link;
     int depth;
     bool lord[8];
@@ -323,8 +324,13 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
         if (closing) return NULL;
         char needle[24] = "</";
         strcat(needle, nm);
+        if (L->no_head_end && is(nm, "head")) return NULL;
         const char *q = find_ci(e, L->end, needle);
-        if (!q) return is(nm, "head") ? NULL : L->end;
+        if (!q) {
+            if (!is(nm, "head")) return L->end;
+            L->no_head_end = true;       // avoid a quadratic rescan on every later <head>
+            return NULL;
+        }
         while (q < L->end && *q != '>') q++;
         return q < L->end ? q + 1 : L->end;
     }

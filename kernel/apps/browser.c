@@ -104,7 +104,8 @@ static bool split_url(const char *url, bool *https, char *host, int hn, char *pa
 }
 
 // Removes "." / ".." segments from an absolute path (query kept).
-static void norm_path(char *path) {
+// cap = bytes available at path (it may sit inside a larger buffer).
+static void norm_path(char *path, size_t cap) {
     char qs[128]; qs[0] = 0;
     char *q = strchr(path, '?');
     if (q) { strncpy(qs, q, sizeof qs - 1); qs[sizeof qs - 1] = 0; *q = 0; }
@@ -130,9 +131,11 @@ static void norm_path(char *path) {
     }
     if (o == 0 || (trail && out[o - 1] != '/')) { if (o + 1 < URL_MAX) out[o++] = '/'; }
     out[o] = 0;
-    strncpy(path, out, URL_MAX - 1);
-    path[URL_MAX - 1] = 0;
-    if (qs[0] && strlen(path) + strlen(qs) < URL_MAX) strcat(path, qs);
+    size_t ol = strlen(out);
+    if (ol >= cap) ol = cap - 1;
+    memcpy(path, out, ol);
+    path[ol] = 0;
+    if (qs[0] && ol + strlen(qs) < cap) strcat(path, qs);
 }
 
 // Resolves href against base into out (URL_MAX). False for unsupported links.
@@ -171,7 +174,7 @@ static bool resolve(const char *base, const char *href, char *out) {
     char *pre = strstr(tmp, "://");
     if (!pre) return false;
     char *ps = strchr(pre + 3, '/');
-    if (ps) norm_path(ps);
+    if (ps) norm_path(ps, URL_MAX - (size_t)(ps - tmp));
     if (strlen(tmp) >= URL_MAX - 1) return false;
     strcpy(out, tmp);
     return true;
