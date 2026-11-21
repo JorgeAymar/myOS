@@ -3,16 +3,19 @@
 
 Usage:  python3 -I tools/bdf2c.py <font.bdf> <c-symbol> > kernel/gfx/font_<name>.c
 
-Emits printable ASCII (0x20-0x7e) plus three extra slots used by the UI:
-  0x7f = U+00B7 MIDDLE DOT, 0x80 = U+00B0 DEGREE SIGN, 0x81 = U+2022 BULLET.
+Emits printable ASCII (0x20-0x7e) plus extra slots used by the UI
+(0x7f..0x8a, see EXTRA) and Latin-1 Supplement at 0xA0..0xFF.
 Every glyph row is a uint16_t, left-aligned (bit 15 = leftmost pixel).
 Glyphs are placed in a full W x H cell using the BDF bounding boxes, so fonts
 with per-glyph BBX values also convert correctly.
 """
 import sys
 
-EXTRA = {0x7f: 0x00B7, 0x80: 0x00B0, 0x81: 0x2022}
-FIRST, LAST = 0x20, 0x81
+# Same slot map as tools/ttf2c.py; 0xA0..0xFF are U+00A0..U+00FF.
+EXTRA = {0x7f: 0x00B7, 0x80: 0x00B0, 0x81: 0x2022, 0x82: 0x2014,
+         0x83: 0x20AC, 0x84: 0x2013, 0x85: 0x2026, 0x86: 0x2018,
+         0x87: 0x2019, 0x88: 0x201C, 0x89: 0x201D, 0x8a: 0x2122}
+FIRST, LAST = 0x20, 0xFF
 
 
 def parse(path):
@@ -87,8 +90,10 @@ def main():
            "static const uint16_t %s_rows[%d] = {" % (sym, (LAST - FIRST + 1) * fh)]
     for code in range(FIRST, LAST + 1):
         uni = EXTRA.get(code, code)
-        g = glyphs.get(uni) or glyphs.get(0x3f)
-        cell = render(props, g)
+        if 0x8b <= code <= 0x9f:
+            cell = [0] * fh
+        else:
+            cell = render(props, glyphs.get(uni) or glyphs.get(0x3f))
         label = chr(uni) if 0x20 < uni < 0x7f and uni != 0x5c else "U+%04X" % uni
         out.append("    // 0x%02x %s" % (code, label))
         for j in range(0, fh, 8):

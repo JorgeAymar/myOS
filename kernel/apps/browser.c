@@ -319,6 +319,17 @@ static void begin(struct window *w, const char *url_in, int hop) {
         end_load(w);
         return;
     }
+    if (strcmp(url, "about:latin1") == 0) {
+        set_status("about:latin1");
+        show_html(w, "<html><head><title>Latin-1 \xc3\x81\xc3\xa9</title></head><body><h1>Latin-1 test</h1>"
+                     "<p>\xc3\xa1 \xc3\xa9 \xc3\xad \xc3\xb3 \xc3\xba \xc3\xb1 \xc3\x9c \xc2\xbf \xc2\xa1 \xc2\xab \xc2\xbb \xc2\xb0 "
+                     "Econ\xc3\xb3micos, sesi\xc3\xb3n, Fran\xc3\xa7" "ais, \xc3\x85ngstr\xc3\xb6m</p>"
+                     "<p>&aacute;&eacute;&iacute;&oacute;&uacute;&ntilde;&Uuml;&iquest;&iexcl;&laquo;&raquo;&euro;&#233;&#xF1; "
+                     "\xe2\x80\x94 \xe2\x80\x93 \xe2\x80\x9cquoted\xe2\x80\x9d it\xe2\x80\x99s \xe2\x80\xa6 \xe2\x82\xac" "5</p>"
+                     "<pre>mono: \xc3\xa1\xc3\xa9\xc3\xb1\xc3\x9c \xc2\xbf\xc2\xa1 \xe2\x82\xac</pre></body></html>", false);
+        end_load(w);
+        return;
+    }
     bool https;
     char host[96], path[URL_MAX];
     if (!split_url(url, &https, host, sizeof host, path, sizeof path)) {
@@ -520,6 +531,7 @@ static void go_typed(struct window *w, const char *in) {
     int l = (int)strlen(t);
     while (l > 0 && t[l - 1] == ' ') t[--l] = 0;
     if (!l) return;
+    if (strcmp(t, "about:latin1") == 0) { navigate(w, t); return; }
     if (starts_ci(t, "about:")) { navigate(w, "about:home"); return; }
     if (strstr(t, "://")) { navigate(w, t); return; }
     char hostpart[96]; int o = 0;

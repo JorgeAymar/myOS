@@ -177,21 +177,26 @@ static void emit_cp(struct lay *L, unsigned cp) {
         return;
     }
     if (cp < 0x20 || cp == 0x7f) return;
-    const char *s;
     char one[2] = { 0, 0 };
-    if (cp < 0x7f) { one[0] = (char)cp; s = one; }
-    else switch (cp) {
-    case 0x2014: s = CH_EMDASH; break;
-    case 0x2013: s = "-"; break;
-    case 0x2018: case 0x2019: s = "'"; break;
-    case 0x201c: case 0x201d: s = "\""; break;
-    case 0x2022: s = CH_BULLET; break;
-    case 0x2026: s = "..."; break;
-    case 0xa9: s = "(c)"; break;
-    case 0xb7: s = CH_MIDDOT; break;
-    case 0xb0: s = CH_DEGREE; break;
-    default: s = "?"; break;
+    if (cp < 0x7f) one[0] = (char)cp;
+    else {
+        // Font slots: U+00A0..U+00FF map 1:1, typographic extras live at 0x80..0x8a.
+        switch (cp) {
+        case 0xb7: one[0] = 0x7f; break;
+        case 0x2022: one[0] = (char)0x81; break;
+        case 0x2014: one[0] = (char)0x82; break;
+        case 0x20ac: one[0] = (char)0x83; break;
+        case 0x2013: one[0] = (char)0x84; break;
+        case 0x2026: one[0] = (char)0x85; break;
+        case 0x2018: one[0] = (char)0x86; break;
+        case 0x2019: one[0] = (char)0x87; break;
+        case 0x201c: one[0] = (char)0x88; break;
+        case 0x201d: one[0] = (char)0x89; break;
+        case 0x2122: one[0] = (char)0x8a; break;
+        default: one[0] = (cp > 0xa0 && cp <= 0xff) ? (char)cp : '?'; break;
+        }
     }
+    const char *s = one;
     for (; *s; s++) {
         if (L->pre) pre_char(L, *s);
         else feed(L, *s);
@@ -199,6 +204,22 @@ static void emit_cp(struct lay *L, unsigned cp) {
 }
 
 // p points at '&'. Returns bytes consumed (0 = not an entity) and the code point.
+// HTML 4 names of U+00A0..U+00FF, in order.
+static const char *const latin1_names[96] = {
+    "nbsp", "iexcl", "cent", "pound", "curren", "yen", "brvbar", "sect",
+    "uml", "copy", "ordf", "laquo", "not", "shy", "reg", "macr",
+    "deg", "plusmn", "sup2", "sup3", "acute", "micro", "para", "middot",
+    "cedil", "sup1", "ordm", "raquo", "frac14", "frac12", "frac34", "iquest",
+    "Agrave", "Aacute", "Acirc", "Atilde", "Auml", "Aring", "AElig", "Ccedil",
+    "Egrave", "Eacute", "Ecirc", "Euml", "Igrave", "Iacute", "Icirc", "Iuml",
+    "ETH", "Ntilde", "Ograve", "Oacute", "Ocirc", "Otilde", "Ouml", "times",
+    "Oslash", "Ugrave", "Uacute", "Ucirc", "Uuml", "Yacute", "THORN", "szlig",
+    "agrave", "aacute", "acirc", "atilde", "auml", "aring", "aelig", "ccedil",
+    "egrave", "eacute", "ecirc", "euml", "igrave", "iacute", "icirc", "iuml",
+    "eth", "ntilde", "ograve", "oacute", "ocirc", "otilde", "ouml", "divide",
+    "oslash", "ugrave", "uacute", "ucirc", "uuml", "yacute", "thorn", "yuml",
+};
+
 static int entity(const char *p, const char *end, unsigned *cp) {
     const char *q = p + 1;
     if (q >= end) return 0;
@@ -231,9 +252,12 @@ static int entity(const char *p, const char *end, unsigned *cp) {
         {"amp", '&'}, {"lt", '<'}, {"gt", '>'}, {"quot", '"'}, {"apos", '\''}, {"nbsp", ' '},
         {"mdash", 0x2014}, {"ndash", 0x2013}, {"lsquo", 0x2018}, {"rsquo", 0x2019},
         {"ldquo", 0x201c}, {"rdquo", 0x201d}, {"hellip", 0x2026}, {"copy", 0xa9},
-        {"bull", 0x2022}, {"middot", 0xb7}, {"deg", 0xb0},
+        {"bull", 0x2022}, {"euro", 0x20ac}, {"trade", 0x2122}, {"sbquo", 0x2018},
+        {"lsaquo", '<'}, {"rsaquo", '>'},
     };
     *cp = '?';
+    for (unsigned i = 0; i < 96; i++)
+        if (strcmp(latin1_names[i], name) == 0) { *cp = 0xa0 + i; return (int)(q - p); }
     for (unsigned i = 0; i < sizeof tab / sizeof tab[0]; i++)
         if (strcmp(tab[i].n, name) == 0) { *cp = tab[i].cp; break; }
     return (int)(q - p);
@@ -486,7 +510,7 @@ void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
                     int k = *c == '&' ? entity(c, z, &cp) : 0;
                     if (k) c += k; else cp = utf8_next(&c, z);
                     if (cp == ' ' || cp == '\n' || cp == '\r' || cp == '\t' || cp == 0xa0) { sp = o > 0; continue; }
-                    if (cp < 0x20 || cp >= 0x7f) cp = '?';
+                    if (cp < 0x20 || cp >= 0x7f) cp = cp >= 0xa0 && cp <= 0xff ? cp : '?';
                     if (sp) { d->title[o++] = ' '; sp = false; if (o >= (int)sizeof d->title - 1) break; }
                     d->title[o++] = (char)cp;
                 }

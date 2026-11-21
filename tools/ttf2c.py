@@ -6,14 +6,19 @@ Usage:
 
 Requires Pillow (FreeType). Covers printable ASCII 0x20-0x7e plus extra slots
 0x7f = U+00B7 MIDDLE DOT, 0x80 = U+00B0 DEGREE SIGN, 0x81 = U+2022 BULLET,
-0x82 = U+2014 EM DASH. A mild gamma (0.85) thickens stems slightly so small
+0x82 = U+2014 EM DASH, 0x83 euro, 0x84 en dash, 0x85 ellipsis, 0x86/0x87 single
+and 0x88/0x89 double curly quotes, 0x8a trade mark; 0x8b..0x9f are empty; 0xA0..0xFF
+are U+00A0..U+00FF. A mild gamma (0.85) thickens stems slightly so small
 text stays legible when alpha-blended in linear space.
 """
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-EXTRA = {0x7f: 0x00B7, 0x80: 0x00B0, 0x81: 0x2022, 0x82: 0x2014}
-FIRST, LAST = 0x20, 0x82
+# Slots 0xA0..0xFF map 1:1 to U+00A0..U+00FF (Latin-1 Supplement).
+EXTRA = {0x7f: 0x00B7, 0x80: 0x00B0, 0x81: 0x2022, 0x82: 0x2014,
+         0x83: 0x20AC, 0x84: 0x2013, 0x85: 0x2026, 0x86: 0x2018,
+         0x87: 0x2019, 0x88: 0x201C, 0x89: 0x201D, 0x8a: 0x2122}
+FIRST, LAST = 0x20, 0xFF
 GAMMA = 0.85
 
 
@@ -26,6 +31,9 @@ def main():
     lut = [round(255 * (v / 255) ** GAMMA) for v in range(256)]
     glyphs, data = [], []
     for code in range(FIRST, LAST + 1):
+        if 0x8b <= code <= 0x9f:
+            glyphs.append((len(data), 0, 0, 0, 0, 0))
+            continue
         ch = chr(EXTRA.get(code, code))
         adv = round(font.getlength(ch))
         pad = size
