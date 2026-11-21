@@ -345,7 +345,7 @@ static void begin(struct window *w, const char *url_in, int hop) {
         end_load(w);
         return;
     }
-    if (!(https ? net_job_start_https(&job_tok, host, path, RESP_MAX, 15000)
+    if (!(https ? net_job_start_https(&job_tok, host, path, RESP_MAX, 60000)
                 : net_job_start_http(&job_tok, host, path, RESP_MAX, 10000))) {
         set_status("Network busy");
         error_page(w, "Network busy", "Another network request is still running. Try again in a moment.", url);
