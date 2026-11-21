@@ -344,7 +344,7 @@ static void begin(struct window *w, const char *url_in, int hop) {
         return;
     }
     if (!(https ? net_job_start_https(&job_tok, host, path, RESP_MAX, 15000)
-                : net_job_start_http(&job_tok, host, path, RESP_MAX, 5000))) {
+                : net_job_start_http(&job_tok, host, path, RESP_MAX, 10000))) {
         set_status("Network busy");
         error_page(w, "Network busy", "Another network request is still running. Try again in a moment.", url);
         end_load(w);
@@ -364,6 +364,15 @@ static void finish(struct window *w, struct net_job *j) {
     char *buf = j->buf;
     int n = j->result;
     loading = false;
+    if (n < 0 && !pend_https && (n == NET_ERESET || n == NET_ETIMEDOUT) && starts_ci(url, "http://")
+        && strlen(url) + 2 < URL_MAX) {
+        // Many sites refuse plain HTTP: retry the same address once over HTTPS.
+        char sec[URL_MAX];
+        ksnprintf(sec, sizeof sec, "https://%s", url + 7);
+        net_job_release();
+        begin(w, sec, pend_hop + 1);
+        return;
+    }
     if (n < 0) {
         const char *why;
         if (pend_https)
