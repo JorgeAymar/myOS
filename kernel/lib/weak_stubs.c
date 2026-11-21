@@ -80,3 +80,12 @@ WEAK void desktop_run(void) { halt_forever(); }
 WEAK void sched_init(void) {}
 WEAK void fs_init(void) {}
 WEAK void net_init(void) {}
+
+// ---- tls (phase 13) ----
+#include "tls.h"
+#include "net.h"
+WEAK int https_get_timeout(const char *host, const char *path, char *buf, size_t len, uint32_t timeout_ms) {
+    (void)host; (void)path; (void)len; (void)timeout_ms;
+    if (buf && len) buf[0] = 0;
+    return NET_ERR;
+}
