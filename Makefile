@@ -31,6 +31,7 @@ OBJS := $(patsubst %,$(BUILD)/%.o,$(C_SRCS) $(ASM_SRCS))
 QEMU_EXTRA :=
 TEST_DEPS  :=
 ISO_EXTRA_FILES :=
+KERNEL_LIBS :=    # static archives linked after OBJS (only needed members get pulled in)
 -include mk/*.mk
 
 # Interactive window: on macOS scale the guest screen when the window is resized.
@@ -64,7 +65,7 @@ $(BUILD)/%.asm.o: %.asm
 	$(NASM) $(NASMFLAGS) $< -o $@
 
 $(KERNEL): $(OBJS) kernel/linker.ld
-	$(LD) $(LDFLAGS) $(OBJS) -o $@
+	$(LD) $(LDFLAGS) $(OBJS) $(KERNEL_LIBS) -o $@
 
 # make_iso(conf, output)
 define make_iso

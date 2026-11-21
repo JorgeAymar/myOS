@@ -7,3 +7,4 @@
 void sched_init(void);
 void fs_init(void);
 void net_init(void);
+void tls_selftest(void);   // kernel/lib/tls_selftest.c (BearSSL known-answer checks)
