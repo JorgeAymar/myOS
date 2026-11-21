@@ -37,6 +37,7 @@ enum thread_state {
 // Creates a kernel thread that runs entry(arg) and exits when entry returns.
 // Returns its tid (> 0), or -1 if out of memory.
 tid_t thread_create(const char *name, thread_entry_t entry, void *arg);
+tid_t thread_create_sized(const char *name, thread_entry_t entry, void *arg, size_t stack_size);
 __attribute__((noreturn)) void thread_exit(void);
 void thread_yield(void);
 void thread_sleep_ms(uint64_t ms);

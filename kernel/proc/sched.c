@@ -160,9 +160,13 @@ void thread_start(thread_entry_t entry, void *arg) {
 }
 
 tid_t thread_create(const char *name, thread_entry_t entry, void *arg) {
+    return thread_create_sized(name, entry, arg, THREAD_STACK_SIZE);
+}
+
+tid_t thread_create_sized(const char *name, thread_entry_t entry, void *arg, size_t stack_size) {
     uint64_t f = irq_save();          // heap has no lock yet: don't get preempted inside it
     struct thread *t = kmalloc(sizeof *t);
-    uint8_t *stack = kmalloc(THREAD_STACK_SIZE);
+    uint8_t *stack = kmalloc(stack_size);
     if (!t || !stack) {
         if (t) kfree(t);
         if (stack) kfree(stack);
@@ -177,7 +181,7 @@ tid_t thread_create(const char *name, thread_entry_t entry, void *arg) {
     t->cr3 = kernel_cr3;
     for (int i = 0; i < STACK_CANARY_WORDS; i++) ((uint64_t *)stack)[i] = STACK_CANARY;
 
-    uint64_t *sp = (uint64_t *)(stack + THREAD_STACK_SIZE);
+    uint64_t *sp = (uint64_t *)(stack + stack_size);
     *--sp = 0;                                  // alignment slot
     *--sp = (uint64_t)thread_trampoline;        // context_switch's `ret`
     *--sp = 0;                                  // rbp

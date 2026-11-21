@@ -7,6 +7,13 @@
 #include "proc.h"
 #include "mm.h"
 #include "string.h"
+#include "tls.h"
+
+// The worker thread gets a 128 KiB stack (thread_create_sized): TLS handshakes
+// (BearSSL x509/RSA/EC code) need far more than the default 16 KiB. Even so,
+// big BearSSL contexts (br_ssl_client_context, x509 minimal context, I/O buffers,
+// ~25-30 KB+) must NOT live on this stack: tls.c allocates them with kmalloc.
+#define NETJOB_STACK_SIZE (128 * 1024)
 
 static struct net_job job;
 static mutex_t net_lock = MUTEX_INIT;
@@ -21,7 +28,9 @@ static void worker(void *arg) {
     struct net_job *j = arg;
     mutex_lock(&net_lock);
     if (j->kind == NJ_HTTP) {
-        j->result = http_get_timeout(j->host, j->path, j->buf, j->buflen, j->timeout_ms);
+        j->result = j->https
+            ? https_get_timeout(j->host, j->path, j->buf, j->buflen, j->timeout_ms)
+            : http_get_timeout(j->host, j->path, j->buf, j->buflen, j->timeout_ms);
         j->length = j->result > 0 ? (size_t)j->result : 0;
     } else {
         uint32_t ip = 0;
@@ -37,7 +46,7 @@ static void worker(void *arg) {
 }
 
 static bool start(const void *owner, enum net_job_kind kind, const char *host,
-                  const char *path, size_t buflen, uint32_t timeout_ms) {
+                  const char *path, size_t buflen, uint32_t timeout_ms, bool https) {
     if (job.state != NJ_IDLE) return false;
     memset(&job, 0, sizeof job);
     if (kind == NJ_HTTP) {
@@ -49,10 +58,11 @@ static bool start(const void *owner, enum net_job_kind kind, const char *host,
     job.owner = owner;
     job.kind = kind;
     job.timeout_ms = timeout_ms;
+    job.https = https;
     strncpy(job.host, host, sizeof job.host - 1);
     if (path) strncpy(job.path, path, sizeof job.path - 1);
     job.state = NJ_RUNNING;
-    if (thread_create("netjob", worker, &job) < 0) {
+    if (thread_create_sized("netjob", worker, &job, NETJOB_STACK_SIZE) < 0) {
         kfree(job.buf);
         job.buf = NULL;
         job.state = NJ_IDLE;
@@ -63,11 +73,16 @@ static bool start(const void *owner, enum net_job_kind kind, const char *host,
 
 bool net_job_start_http(const void *owner, const char *host, const char *path,
                         size_t buflen, uint32_t timeout_ms) {
-    return start(owner, NJ_HTTP, host, path, buflen, timeout_ms);
+    return start(owner, NJ_HTTP, host, path, buflen, timeout_ms, false);
+}
+
+bool net_job_start_https(const void *owner, const char *host, const char *path,
+                         size_t buflen, uint32_t timeout_ms) {
+    return start(owner, NJ_HTTP, host, path, buflen, timeout_ms, true);
 }
 
 bool net_job_start_ping(const void *owner, const char *host, uint32_t timeout_ms) {
-    return start(owner, NJ_PING, host, NULL, 0, timeout_ms);
+    return start(owner, NJ_PING, host, NULL, 0, timeout_ms, false);
 }
 
 bool net_job_busy(void) { return job.state != NJ_IDLE; }

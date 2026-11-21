@@ -96,6 +96,7 @@ struct net_job {
     char host[96], path[256];
     char *buf;                 // HTTP: response (NUL-terminated), job-owned
     size_t buflen, length;
+    bool https;                // HTTP: use TLS (port 443) via https_get_timeout()
     uint32_t timeout_ms;
     int result;                // HTTP: bytes or negative error; ping: rtt ms or negative
     uint32_t ip;               // ping: resolved address
@@ -103,6 +104,8 @@ struct net_job {
 };
 bool net_job_start_http(const void *owner, const char *host, const char *path,
                         size_t buflen, uint32_t timeout_ms);
+bool net_job_start_https(const void *owner, const char *host, const char *path,
+                         size_t buflen, uint32_t timeout_ms);   // same, over TLS
 bool net_job_start_ping(const void *owner, const char *host, uint32_t timeout_ms);
 bool net_job_busy(void);                         // running, or done and not released
 struct net_job *net_job_done(const void *owner); // finished job of owner, else NULL

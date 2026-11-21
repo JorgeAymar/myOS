@@ -1,4 +1,4 @@
-// Browser: a tiny HTTP/1.x text browser (no HTTPS yet, no images, CSS or JS).
+// Browser: a tiny HTTP/1.x + HTTPS text browser (no images, CSS or JS).
 // The chrome (toolbar, address bar, status line, scrollbar) lives here; HTML
 // tokenizing and layout live in html.c.
 #include "../wm/wm.h"
@@ -46,7 +46,7 @@ static const char HOME_HTML[] =
     "<ol>"
     "<li>Click the address bar (or press Ctrl+L), type an address and press Enter.</li>"
     "<li>Scroll with the mouse wheel, arrow keys, Page Up/Down, Home and End.</li>"
-    "<li>HTTPS pages need TLS, which arrives with phase 13 of myOS.</li>"
+    "<li>Both http:// and https:// addresses work; bare host names default to http://.</li>"
     "</ol>"
     "</body></html>";
 
@@ -208,24 +208,6 @@ static void error_page(struct window *w, const char *title, const char *msg, con
     show_html(w, page, false);
 }
 
-static void https_page(struct window *w, const char *url) {
-    char u[600], plain_url[URL_MAX + 8];
-    esc(u, sizeof u, url);
-    ksnprintf(plain_url, sizeof plain_url, "http://%s", url + 8);
-    char pu[600];
-    esc(pu, sizeof pu, plain_url);
-    ksnprintf(page, sizeof page,
-              "<html><head><title>Secure pages not available</title></head><body>"
-              "<h2>HTTPS is not available yet</h2>"
-              "<p>This browser cannot open <b>%s</b> because secure connections need TLS, "
-              "which arrives with phase 13 of myOS.</p>"
-              "<p>You can try the unencrypted version of the page instead:</p>"
-              "<p><a href=\"%s\">%s</a></p>"
-              "<hr><p><a href=\"about:home\">Back to the start page</a></p></body></html>",
-              u, pu, pu);
-    show_html(w, page, false);
-}
-
 // Case-insensitive header lookup in [hs, he). Copies the trimmed value to out.
 static bool hdr_get(const char *hs, const char *he, const char *name, char *out, int n) {
     size_t nl = strlen(name);
@@ -304,6 +286,7 @@ static int dechunk(char *body, int len) {
 static char job_tok;                 // owner token for the net job
 static char pend_url[URL_MAX];       // address being fetched
 static int pend_hop;
+static bool pend_https;
 
 static void hist_sync(void);
 
@@ -338,16 +321,15 @@ static void begin(struct window *w, const char *url_in, int hop) {
     char host[96], path[URL_MAX];
     if (!split_url(url, &https, host, sizeof host, path, sizeof path)) {
         set_status("Unsupported address");
-        error_page(w, "Unsupported address", "This browser only opens http:// addresses.", url);
+        error_page(w, "Unsupported address", "This browser only opens http:// and https:// addresses.", url);
         end_load(w);
         return;
     }
-    if (https) { set_status("HTTPS not supported"); https_page(w, url); end_load(w); return; }
     if (strchr(host, ':')) {
         const char *c = strchr(host, ':');
-        if (strcmp(c, ":80") != 0) {
+        if (strcmp(c, https ? ":443" : ":80") != 0) {
             set_status("Unsupported port");
-            error_page(w, "Unsupported port", "Only port 80 is supported.", url);
+            error_page(w, "Unsupported port", https ? "Only port 443 is supported for https://." : "Only port 80 is supported for http://.", url);
             end_load(w);
             return;
         }
@@ -361,7 +343,8 @@ static void begin(struct window *w, const char *url_in, int hop) {
         end_load(w);
         return;
     }
-    if (!net_job_start_http(&job_tok, host, path, RESP_MAX, 5000)) {
+    if (!(https ? net_job_start_https(&job_tok, host, path, RESP_MAX, 15000)
+                : net_job_start_http(&job_tok, host, path, RESP_MAX, 5000))) {
         set_status("Network busy");
         error_page(w, "Network busy", "Another network request is still running. Try again in a moment.", url);
         end_load(w);
@@ -369,6 +352,7 @@ static void begin(struct window *w, const char *url_in, int hop) {
     }
     strcpy(pend_url, url);
     pend_hop = hop;
+    pend_https = https;
     ksnprintf(status, sizeof status, "Loading %s ...", url);
     loading = true;
     paint(w);
@@ -381,13 +365,21 @@ static void finish(struct window *w, struct net_job *j) {
     int n = j->result;
     loading = false;
     if (n < 0) {
-        const char *why = n == NET_ETIMEDOUT ? "The server did not answer in time. It may only accept HTTPS, which myOS does not support yet."
-                        : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
-                        : n == NET_ERESET    ? "The connection was reset by the server. It may only accept HTTPS, which myOS does not support yet."
-                                             : "A network error occurred.";
+        const char *why;
+        if (pend_https)
+            why = n == NET_ETIMEDOUT ? "The secure connection timed out. The server did not answer in time."
+                : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
+                : n == NET_ERESET    ? "The secure connection was reset by the server."
+                : n == NET_ERR       ? "Secure connection failed (TLS handshake or certificate error)."
+                                     : "A network error occurred.";
+        else
+            why = n == NET_ETIMEDOUT ? "The server did not answer in time. It may only accept HTTPS; try the https:// address."
+                : n == NET_ENOTFOUND ? "The server name could not be found (DNS lookup failed)."
+                : n == NET_ERESET    ? "The connection was reset by the server. It may only accept HTTPS; try the https:// address."
+                                     : "A network error occurred.";
         net_job_release();
-        set_status("Load failed");
-        error_page(w, "Cannot open the page", why, url);
+        set_status(pend_https && n == NET_ERR ? "Secure connection failed" : "Load failed");
+        error_page(w, pend_https && n == NET_ERR ? "Secure connection failed" : "Cannot open the page", why, url);
         end_load(w);
         return;
     }
@@ -437,7 +429,13 @@ static void finish(struct window *w, struct net_job *j) {
     }
     (void)blen;
     net_job_release();
-    ksnprintf(status, sizeof status, "%s", url);
+    if (pend_https) {
+        char h[96]; bool hs;
+        char pa[URL_MAX];
+        if (split_url(url, &hs, h, sizeof h, pa, sizeof pa)) { char *c = strchr(h, ':'); if (c) *c = 0; }
+        ksnprintf(status, sizeof status, "Secure: %s", h);
+    } else
+        ksnprintf(status, sizeof status, "%s", url);
     if (code >= 400 && !(doc && doc->nruns)) set_status("Error");
     end_load(w);
 }
