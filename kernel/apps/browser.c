@@ -286,6 +286,7 @@ static int dechunk(char *body, int len) {
 static char job_tok;                 // owner token for the net job
 static char pend_url[URL_MAX];       // address being fetched
 static int pend_hop;
+static bool retried_http;      // one automatic retry of a timed-out plain-HTTP load
 static bool pend_https;
 
 static void hist_sync(void);
@@ -308,6 +309,7 @@ static void begin(struct window *w, const char *url_in, int hop) {
         end_load(w);
         return;
     }
+    if (hop == 0) retried_http = false;
     strcpy(cur_url, url);
     set_addr(url);
     addr_focus = false; addr_sel = false;
@@ -364,8 +366,14 @@ static void finish(struct window *w, struct net_job *j) {
     char *buf = j->buf;
     int n = j->result;
     loading = false;
-    if (n < 0 && !pend_https && (n == NET_ERESET || n == NET_ETIMEDOUT) && starts_ci(url, "http://")
-        && strlen(url) + 2 < URL_MAX) {
+    if (n == NET_ETIMEDOUT && !pend_https && !retried_http) {
+        // The first connection after boot is slow while the emulated network warms up: try once more.
+        retried_http = true;
+        net_job_release();
+        begin(w, url, pend_hop);
+        return;
+    }
+    if (n == NET_ERESET && !pend_https && starts_ci(url, "http://") && strlen(url) + 2 < URL_MAX) {
         // Many sites refuse plain HTTP: retry the same address once over HTTPS.
         char sec[URL_MAX];
         ksnprintf(sec, sizeof sec, "https://%s", url + 7);
