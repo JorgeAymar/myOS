@@ -10,7 +10,9 @@
 #define MAX_LINES 2000
 
 enum { F_UI, F_BOLD, F_TITLE, F_MONO, F_MED, F_SMALL };
-enum { K_TEXT, K_HR };
+enum { K_TEXT, K_HR, K_CTL };
+#define CTL_H   24
+#define CTL_ASC 17
 
 static const struct afont *afont_of(int f) {
     switch (f) {
@@ -37,7 +39,7 @@ struct lay {
     bool trunc;                     // a hard limit (runs/pool) was hit
     bool reserve;                   // writing the truncation notice: use the reserved space
     int bold, ital, mono, pre, hf, quote, link;
-    int depth, ul_over, q_over;
+    int depth, ul_over, q_over, cur_form;
     bool lord[8];
     int lnum[8];
     char wb[120]; int wl;
@@ -51,6 +53,7 @@ static void end_line(struct lay *L) {
     for (int i = L->first; i < L->d->nruns; i++) {
         struct hrun *r = &L->d->runs[i];
         if (r->kind == K_TEXT) r->y = L->y + (L->maxasc - f_ascent(r->font));
+        else if (r->kind == K_CTL) r->y = L->y + (L->maxasc - CTL_ASC);
     }
     L->y += L->maxasc + L->maxdesc + 3;
     L->x = L->lm;
@@ -84,7 +87,7 @@ static void add_run(struct lay *L, const char *t, int len, int font, color_t c, 
     struct hrun *r = &d->runs[d->nruns++];
     r->x = (int16_t)x; r->w = (int16_t)w; r->y = L->y;
     r->off = (uint32_t)d->pool_len;
-    r->color = c; r->link = (int16_t)(kind == K_TEXT ? L->link : -1);
+    r->color = c; r->link = (int16_t)(kind == K_TEXT ? L->link : -1); r->ctl = -1;
     r->font = (uint8_t)font; r->kind = (uint8_t)kind;
     r->ul = (uint8_t)(kind == K_TEXT && L->link >= 0);
     memcpy(d->pool + d->pool_len, t, (size_t)len);
@@ -93,6 +96,9 @@ static void add_run(struct lay *L, const char *t, int len, int font, color_t c, 
     if (kind == K_TEXT) {
         L->maxasc = imax(L->maxasc, f_ascent(font));
         L->maxdesc = imax(L->maxdesc, f_height(font) - f_ascent(font));
+    } else if (kind == K_CTL) {
+        L->maxasc = imax(L->maxasc, CTL_ASC);
+        L->maxdesc = imax(L->maxdesc, CTL_H - CTL_ASC);
     }
 }
 
@@ -177,6 +183,25 @@ static void feed(struct lay *L, char c) {
     L->wb[L->wl++] = c;
 }
 
+// Font slot for a code point >= 0x7f: U+00A0..U+00FF map 1:1, typographic extras live at 0x80..0x8a.
+static char cp_slot(unsigned cp) {
+    switch (cp) {
+    case 0xa0: return ' ';
+    case 0xb7: return 0x7f;
+    case 0x2022: return (char)0x81;
+    case 0x2014: return (char)0x82;
+    case 0x20ac: return (char)0x83;
+    case 0x2013: return (char)0x84;
+    case 0x2026: return (char)0x85;
+    case 0x2018: return (char)0x86;
+    case 0x2019: return (char)0x87;
+    case 0x201c: return (char)0x88;
+    case 0x201d: return (char)0x89;
+    case 0x2122: return (char)0x8a;
+    default: return (cp > 0xa0 && cp <= 0xff) ? (char)cp : '?';
+    }
+}
+
 static void emit_cp(struct lay *L, unsigned cp) {
     if (cp == 0xa0) cp = ' ';
     if (cp == ' ' || cp == '\n' || cp == '\r' || cp == '\t') {
@@ -185,25 +210,7 @@ static void emit_cp(struct lay *L, unsigned cp) {
         return;
     }
     if (cp < 0x20 || cp == 0x7f) return;
-    char one[2] = { 0, 0 };
-    if (cp < 0x7f) one[0] = (char)cp;
-    else {
-        // Font slots: U+00A0..U+00FF map 1:1, typographic extras live at 0x80..0x8a.
-        switch (cp) {
-        case 0xb7: one[0] = 0x7f; break;
-        case 0x2022: one[0] = (char)0x81; break;
-        case 0x2014: one[0] = (char)0x82; break;
-        case 0x20ac: one[0] = (char)0x83; break;
-        case 0x2013: one[0] = (char)0x84; break;
-        case 0x2026: one[0] = (char)0x85; break;
-        case 0x2018: one[0] = (char)0x86; break;
-        case 0x2019: one[0] = (char)0x87; break;
-        case 0x201c: one[0] = (char)0x88; break;
-        case 0x201d: one[0] = (char)0x89; break;
-        case 0x2122: one[0] = (char)0x8a; break;
-        default: one[0] = (cp > 0xa0 && cp <= 0xff) ? (char)cp : '?'; break;
-        }
-    }
+    char one[2] = { cp < 0x7f ? (char)cp : cp_slot(cp), 0 };
     const char *s = one;
     for (; *s; s++) {
         if (L->pre) pre_char(L, *s);
@@ -323,7 +330,10 @@ static bool get_attr(const char *s, const char *e, const char *name, char *out, 
                 out[o] = 0;
                 return true;
             }
-        } else if (al == 0) p++;
+        } else {
+            if (al > 0 && strcmp(an, name) == 0) { if (n > 0) out[0] = 0; return true; }   // boolean attribute
+            if (al == 0) p++;
+        }
     }
     return false;
 }
@@ -360,6 +370,169 @@ static int attr_int(const char *s, const char *e, const char *name) {
     return v;
 }
 
+
+// ---- forms ----
+
+// Text between s and end as display bytes (font slots), whitespace collapsed. tags: skip <...>.
+static int strip_text(const char *s, const char *end, bool tags, char *out, int n) {
+    int o = 0; bool sp = false;
+    while (s < end && o < n - 1) {
+        if (tags && *s == '<') {
+            while (s < end && *s != '>') s++;
+            if (s < end) s++;
+            continue;
+        }
+        unsigned cp;
+        int k = *s == '&' ? entity(s, end, &cp) : 0;
+        if (k) s += k; else cp = utf8_next(&s, end);
+        if (cp == ' ' || cp == '\n' || cp == '\r' || cp == '\t' || cp == 0xa0) { sp = o > 0; continue; }
+        if (cp < 0x20 || cp == 0x7f) continue;
+        if (sp) { out[o++] = ' '; sp = false; if (o >= n - 1) break; }
+        out[o++] = cp < 0x7f ? (char)cp : cp_slot(cp);
+    }
+    out[o] = 0;
+    return o;
+}
+
+static struct hctl *new_ctl(struct lay *L, int type) {
+    struct hdoc *d = L->d;
+    if (d->nctl >= HTML_MAX_CTLS) return NULL;
+    struct hctl *c = &d->ctl[d->nctl++];
+    memset(c, 0, sizeof *c);
+    c->type = (uint8_t)type;
+    c->form = (int8_t)L->cur_form;
+    return c;
+}
+
+static int ctl_index(struct lay *L, const struct hctl *c) { return (int)(c - L->d->ctl); }
+
+// Places a control box of width w in the text flow.
+static void put_ctl(struct lay *L, struct hctl *c, int w) {
+    if (L->stop) return;
+    if (w > L->width - L->lm) w = L->width - L->lm;
+    if (w < 20) w = 20;
+    int sp = (L->has && L->space) ? f_width(F_UI, " ") : 0;
+    if (L->has && L->x + sp + w > L->width) { end_line(L); sp = 0; }
+    begin_content(L);
+    L->x += sp;
+    int n0 = L->d->nruns;
+    add_run(L, "", 0, F_UI, 0, L->x, K_CTL, w);
+    if (L->d->nruns > n0) {
+        L->d->runs[n0].ctl = (int8_t)ctl_index(L, c);
+        c->vis = true;
+        L->x += w;
+        L->space = true;
+    }
+}
+
+static void ctl_common(struct hctl *c, const char *s, const char *e) {
+    get_attr(s, e, "name", c->name, sizeof c->name);
+    get_attr(s, e, "value", c->value, sizeof c->value);
+    get_attr(s, e, "placeholder", c->ph, sizeof c->ph);
+    char b[4];
+    c->disabled = get_attr(s, e, "disabled", b, sizeof b);
+    c->checked = get_attr(s, e, "checked", b, sizeof b);
+    int ml = attr_int(s, e, "maxlength");
+    c->maxlen = (uint8_t)(ml > 0 && ml < HTML_VAL_LEN ? ml : 0);
+    c->len = c->cur = (int16_t)strlen(c->value);
+    if (c->maxlen && c->len > c->maxlen) { c->len = c->cur = c->maxlen; c->value[c->len] = 0; }
+}
+
+static int box_w(int size, int def) {
+    if (size <= 0 || size > 80) size = def;
+    return size * 8 + 16;
+}
+
+static void do_input(struct lay *L, const char *s, const char *e) {
+    char ty[16] = "";
+    get_attr(s, e, "type", ty, sizeof ty);
+    for (char *c = ty; *c; c++) *c = lc(*c);
+    int t = HC_TEXT;
+    if (is(ty, "hidden")) t = HC_HIDDEN;
+    else if (is(ty, "checkbox")) t = HC_CHECK;
+    else if (is(ty, "radio")) t = HC_RADIO;
+    else if (is(ty, "submit") || is(ty, "image")) t = HC_SUBMIT;
+    else if (is(ty, "button") || is(ty, "reset")) t = HC_BUTTON;
+    else if (is(ty, "password")) t = HC_PASSWORD;
+    struct hctl *c = new_ctl(L, t);
+    if (!c) {                                   // too many controls: plain text fallback
+        char v[64] = "";
+        if (t == HC_HIDDEN) return;
+        if (t == HC_CHECK || t == HC_RADIO) { emit_str(L, "[ ]", 3); return; }
+        if (!get_attr(s, e, "value", v, sizeof v) || !v[0]) {
+            if (t == HC_SUBMIT || t == HC_BUTTON) strcpy(v, "Submit");
+            else if (!get_attr(s, e, "placeholder", v, sizeof v)) v[0] = 0;
+        }
+        emit_str(L, "[ ", 2); emit_str(L, v[0] ? v : "______", 40); emit_str(L, " ]", 2);
+        return;
+    }
+    ctl_common(c, s, e);
+    if (t == HC_HIDDEN) return;
+    if (t == HC_CHECK || t == HC_RADIO) {
+        if (!c->value[0]) { strcpy(c->value, "on"); c->len = c->cur = 2; }
+        put_ctl(L, c, 16);
+    } else if (t == HC_SUBMIT || t == HC_BUTTON) {
+        const char *lab = c->value[0] ? c->value : (is(ty, "reset") ? "Reset" : "Submit");
+        put_ctl(L, c, f_width(F_UI, lab) + 24);
+    } else {
+        put_ctl(L, c, box_w(attr_int(s, e, "size"), 24));
+    }
+}
+
+static void do_button(struct lay *L, const char *s, const char *e, const char *lab_s, const char *lab_e) {
+    char ty[16] = "submit";
+    get_attr(s, e, "type", ty, sizeof ty);
+    for (char *c = ty; *c; c++) *c = lc(*c);
+    struct hctl *c = new_ctl(L, is(ty, "button") || is(ty, "reset") ? HC_BUTTON : HC_SUBMIT);
+    if (!c) return;
+    ctl_common(c, s, e);
+    c->ph[0] = 0;
+    strip_text(lab_s, lab_e, true, c->ph, sizeof c->ph);
+    if (!c->ph[0]) strcpy(c->ph, c->value[0] ? c->value : "Submit");
+    put_ctl(L, c, f_width(F_UI, c->ph) + 24);
+}
+
+// q points at the closing </select> or </textarea>.
+static void do_select(struct lay *L, const char *s, const char *e, const char *q) {
+    struct hdoc *d = L->d;
+    struct hctl *c = new_ctl(L, HC_SELECT);
+    if (!c) { emit_str(L, "[ select ]", 12); return; }
+    ctl_common(c, s, e);
+    c->value[0] = 0; c->len = c->cur = 0;
+    c->opt_first = (uint16_t)d->nopts;
+    int maxw = 0;
+    const char *p = e + 1;
+    while (p < q && c->nopt < HTML_SEL_OPTS && d->nopts < HTML_MAX_OPTS) {
+        const char *o = find_ci(p, q, "<option");
+        if (!o) break;
+        const char *te = o + 7;
+        while (te < q && *te != '>') te++;
+        if (te >= q) break;
+        const char *le = te + 1;
+        while (le < q && *le != '<') le++;
+        struct hopt *op = &d->opts[d->nopts];
+        strip_text(te + 1, le, false, op->label, sizeof op->label);
+        if (!get_attr(o + 7, te, "value", op->value, sizeof op->value)) strcpy(op->value, op->label);
+        char b[4];
+        if (get_attr(o + 7, te, "selected", b, sizeof b)) c->sel = c->nopt;
+        maxw = imax(maxw, f_width(F_UI, op->label));
+        c->nopt++; d->nopts++;
+        p = te + 1;
+    }
+    put_ctl(L, c, imax(maxw, 40) + 36);
+}
+
+static void do_textarea(struct lay *L, const char *s, const char *e, const char *q) {
+    struct hctl *c = new_ctl(L, HC_TEXTAREA);
+    if (!c) { emit_str(L, "[ text ]", 12); return; }
+    ctl_common(c, s, e);
+    const char *b = e + 1;
+    if (b < q && *b == '\n') b++;
+    c->len = c->cur = (int16_t)strip_text(b, q, false, c->value, HTML_VAL_LEN);
+    int cols = attr_int(s, e, "cols");
+    put_ctl(L, c, box_w(cols, 30));
+}
+
 static void heading(struct lay *L, int level, bool open) {
     if (open) {
         block_break(L, level == 1 ? 14 : 12);
@@ -392,25 +565,41 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
         emit_str(L, "[", 1); emit_str(L, alt, 60); emit_str(L, "]", 1);
         return NULL;
     }
-    if (is(nm, "input")) {
-        char ty[16] = "", v[64] = "";
-        get_attr(s, e, "type", ty, sizeof ty);
-        for (char *c = ty; *c; c++) *c = lc(*c);
-        if (is(ty, "hidden")) return NULL;
-        if (is(ty, "checkbox") || is(ty, "radio")) { emit_str(L, "[ ]", 3); return NULL; }
-        bool btn = is(ty, "submit") || is(ty, "button") || is(ty, "reset") || is(ty, "image");
-        if (!get_attr(s, e, "value", v, sizeof v) || !v[0]) {
-            if (btn) strcpy(v, is(ty, "reset") ? "Reset" : "Submit");
-            else if (!get_attr(s, e, "placeholder", v, sizeof v)) v[0] = 0;
+    if (is(nm, "form")) {
+        L->cur_form = -1;
+        if (!closing && L->d->nforms < HTML_MAX_FORMS) {
+            struct hform *f = &L->d->forms[L->d->nforms];
+            f->action[0] = 0;
+            get_attr(s, e, "action", f->action, sizeof f->action);
+            char m[8] = "";
+            get_attr(s, e, "method", m, sizeof m);
+            f->post = (uint8_t)(lc(m[0]) == 'p');
+            L->cur_form = L->d->nforms++;
         }
-        emit_str(L, "[ ", 2);
-        if (v[0] && is(ty, "password") && !btn) emit_str(L, "****", 4);
-        else emit_str(L, v[0] ? v : "______", 40);
-        emit_str(L, " ]", 2);
+        block_break(L, 0);
         return NULL;
     }
-    if (is(nm, "button")) { emit_str(L, closing ? " ]" : "[ ", 2); return NULL; }
-    if (!closing && (is(nm, "select") || is(nm, "textarea"))) emit_str(L, is(nm, "select") ? "[ select ]" : "[ text ]", 12);
+    if (is(nm, "input")) { do_input(L, s, e); return NULL; }
+    if (is(nm, "button")) {
+        if (closing) { emit_str(L, " ]", 2); return NULL; }
+        const char *lim = e + 600 < L->end ? e + 600 : L->end;
+        const char *q = find_ci(e, lim, "</button");
+        if (q && L->d->nctl < HTML_MAX_CTLS) {
+            do_button(L, s, e, e + 1, q);
+            while (q < L->end && *q != '>') q++;
+            return q < L->end ? q + 1 : L->end;
+        }
+        emit_str(L, "[ ", 2);
+        return NULL;
+    }
+    if (!closing && (is(nm, "select") || is(nm, "textarea"))) {
+        bool sel = is(nm, "select");
+        const char *q = find_ci(e, L->end, sel ? "</select" : "</textarea");
+        if (!q) { L->stop = true; return L->end; }
+        if (sel) do_select(L, s, e, q); else do_textarea(L, s, e, q);
+        while (q < L->end && *q != '>') q++;
+        return q < L->end ? q + 1 : L->end;
+    }
 
     if (is(nm, "script") || is(nm, "style") || is(nm, "title") || is(nm, "head") || is(nm, "noscript") ||
         is(nm, "svg") || is(nm, "template") || is(nm, "select") || is(nm, "textarea") || is(nm, "iframe") ||
@@ -436,7 +625,7 @@ static const char *handle_tag(struct lay *L, const char *s, const char *e) {
         return NULL;
     }
     if (is(nm, "div") || is(nm, "section") || is(nm, "article") || is(nm, "header") || is(nm, "footer") ||
-        is(nm, "nav") || is(nm, "main") || is(nm, "form") || is(nm, "center") || is(nm, "figure") ||
+        is(nm, "nav") || is(nm, "main") || is(nm, "center") || is(nm, "figure") ||
         is(nm, "address") || is(nm, "fieldset") || is(nm, "details") || is(nm, "summary") ||
         is(nm, "dl") || is(nm, "dt") || is(nm, "dd") || is(nm, "tr") || is(nm, "caption")) {
         block_break(L, is(nm, "dd") || is(nm, "dt") ? 3 : 0);
@@ -530,8 +719,11 @@ struct hdoc *html_new(void) {
     d->runs = kmalloc(sizeof(struct hrun) * MAX_RUNS);
     d->pool = kmalloc(POOL_SZ);
     d->links = kmalloc((size_t)HTML_MAX_LINKS * HTML_LINK_LEN);
-    if (!d->runs || !d->pool || !d->links) {
-        kfree(d->runs); kfree(d->pool); kfree(d->links); kfree(d);
+    d->ctl = kmalloc(sizeof(struct hctl) * HTML_MAX_CTLS);
+    d->opts = kmalloc(sizeof(struct hopt) * HTML_MAX_OPTS);
+    d->focus = -1;
+    if (!d->runs || !d->pool || !d->links || !d->ctl || !d->opts) {
+        kfree(d->runs); kfree(d->pool); kfree(d->links); kfree(d->ctl); kfree(d->opts); kfree(d);
         return NULL;
     }
     return d;
@@ -559,13 +751,14 @@ static unsigned utf8_next(const char **pp, const char *end) {
 
 void html_free(struct hdoc *d) {
     if (!d) return;
-    kfree(d->runs); kfree(d->pool); kfree(d->links); kfree(d);
+    kfree(d->runs); kfree(d->pool); kfree(d->links); kfree(d->ctl); kfree(d->opts); kfree(d);
 }
 
 void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
     if (width < 120) width = 120;
     if (width > 8000) width = 8000;
     d->nruns = 0; d->pool_len = 0; d->nlinks = 0; d->height = 0; d->title[0] = 0;
+    d->nforms = 0; d->nctl = 0; d->nopts = 0; d->focus = -1;
     size_t n = 0;
     while (n < HTML_MAX_INPUT && html[n]) n++;
     const char *end = html + n;
@@ -573,7 +766,7 @@ void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
     struct lay L;
     memset(&L, 0, sizeof L);
     L.d = d; L.end = end; L.width = width; L.lm = 28; L.x = 28; L.y = 14;
-    L.hf = -1; L.link = -1;
+    L.hf = -1; L.link = -1; L.cur_form = -1;
     L.pcap = (width - L.lm) / 8;
     if (L.pcap > 190) L.pcap = 190;
     if (L.pcap < 8) L.pcap = 8;
@@ -646,14 +839,136 @@ void html_layout(struct hdoc *d, const char *html, int width, bool plain) {
     d->height = L.y + 16;
 }
 
+// ---- form controls: drawing, hit testing, editing helpers ----
+
+static struct rect rect_inter(struct rect a, struct rect b) {
+    int x0 = imax(a.x, b.x), y0 = imax(a.y, b.y);
+    int x1 = a.x + a.w < b.x + b.w ? a.x + a.w : b.x + b.w;
+    int y1 = a.y + a.h < b.y + b.h ? a.y + a.h : b.y + b.h;
+    return (struct rect){ x0, y0, x1 > x0 ? x1 - x0 : 0, y1 > y0 ? y1 - y0 : 0 };
+}
+
+// Display bytes of the first n bytes of a raw value (UTF-8 or Latin-1); password fields show bullets.
+static int to_disp(const char *v, int n, bool pw, char *out, int cap) {
+    const char *p = v, *end = v + n;
+    int o = 0;
+    while (p < end && o < cap - 1) {
+        unsigned cp = utf8_next(&p, end);
+        if (cp < 0x20 || cp == 0x7f) continue;
+        out[o++] = pw ? CH_BULLET[0] : (cp < 0x7f ? (char)cp : cp_slot(cp));
+    }
+    out[o] = 0;
+    return o;
+}
+
+static int disp_w(const struct hctl *c, int n) {
+    char t[HTML_VAL_LEN + 4];
+    to_disp(c->value, n, c->type == HC_PASSWORD, t, sizeof t);
+    return text_width(&afont_ui, t);
+}
+
+// Horizontal scroll of the text so the caret stays inside a box of width w.
+static int text_off(const struct hctl *c, int w) {
+    int cw = disp_w(c, c->cur), avail = w - 18;
+    return cw > avail ? cw - avail : 0;
+}
+
+static bool is_cont(char c) { return (((unsigned char)c) & 0xc0) == 0x80; }
+
+int html_ctl_caret_at(const struct hdoc *d, int ci, int relx) {
+    if (ci < 0 || ci >= d->nctl) return 0;
+    const struct hctl *c = &d->ctl[ci];
+    if (c->type != HC_TEXT && c->type != HC_PASSWORD && c->type != HC_TEXTAREA) return 0;
+    int w = 0;
+    for (int i = 0; i < d->nruns; i++) if (d->runs[i].kind == K_CTL && d->runs[i].ctl == ci) { w = d->runs[i].w; break; }
+    int target = relx - 8 + text_off(c, w), i = 0;
+    while (i < c->len) {
+        int j = i + 1;
+        while (j < c->len && is_cont(c->value[j])) j++;
+        if (target < (disp_w(c, i) + disp_w(c, j)) / 2) break;
+        i = j;
+    }
+    return i;
+}
+
+static void draw_ctl(const struct hdoc *d, struct surface *s, struct rect view, const struct hrun *r, int sy) {
+    int ci = r->ctl;
+    if (ci < 0 || ci >= d->nctl) return;
+    const struct hctl *c = &d->ctl[ci];
+    int x = view.x + r->x, w = r->w, th = f_height(F_UI);
+    bool foc = d->focus == ci;
+    color_t border = RGB(0xc7, 0xc7, 0xcc), tc = c->disabled ? C_TEXT_INACTIVE : C_TEXT;
+    struct rect b = { x, sy, w, CTL_H };
+    char t[HTML_VAL_LEN + 4];
+    switch (c->type) {
+    case HC_TEXT: case HC_PASSWORD: case HC_TEXTAREA: case HC_SELECT: {
+        gfx_fill_rrect(s, b, 6, c->disabled ? RGB(0xf2, 0xf2, 0xf5) : RGB(0xff, 0xff, 0xff));
+        gfx_stroke_rrect(s, b, 6, foc ? C_ACCENT : border);
+        if (foc) gfx_stroke_rrect(s, (struct rect){ x + 1, sy + 1, w - 2, CTL_H - 2 }, 5, C_ACCENT);
+        int ty = sy + (CTL_H - th) / 2;
+        if (c->type == HC_SELECT) {
+            gfx_set_clip(s, rect_inter(view, (struct rect){ x + 6, sy + 1, w - 28, CTL_H - 2 }));
+            const char *lab = c->nopt ? d->opts[c->opt_first + c->sel].label : "";
+            text_draw(s, &afont_ui, x + 8, ty, lab, tc);
+            gfx_set_clip(s, view);
+            gfx_line(s, x + w - 18, sy + 10, x + w - 14, sy + 14, C_TEXT_2);
+            gfx_line(s, x + w - 14, sy + 14, x + w - 10, sy + 10, C_TEXT_2);
+            break;
+        }
+        gfx_set_clip(s, rect_inter(view, (struct rect){ x + 5, sy + 1, w - 10, CTL_H - 2 }));
+        int off = text_off(c, w);
+        if (c->len == 0) {
+            if (c->ph[0]) text_draw(s, &afont_ui, x + 8, ty, c->ph, C_TEXT_3);
+        } else {
+            to_disp(c->value, c->len, c->type == HC_PASSWORD, t, sizeof t);
+            text_draw(s, &afont_ui, x + 8 - off, ty, t, tc);
+        }
+        if (foc && d->caret) gfx_vline(s, x + 8 + disp_w(c, c->cur) - off, sy + 4, CTL_H - 8, C_ACCENT);
+        gfx_set_clip(s, view);
+        break;
+    }
+    case HC_SUBMIT: case HC_BUTTON: {
+        gfx_fill_rrect(s, b, 6, c->disabled ? RGB(0xf7, 0xf7, 0xf9) : RGB(0xf2, 0xf2, 0xf5));
+        gfx_stroke_rrect(s, b, 6, foc ? C_ACCENT : border);
+        const char *lab = c->ph[0] ? c->ph : c->value[0] ? c->value : "Submit";
+        to_disp(lab, (int)strlen(lab), false, t, sizeof t);
+        gfx_set_clip(s, rect_inter(view, (struct rect){ x + 3, sy + 1, w - 6, CTL_H - 2 }));
+        int tw = text_width(&afont_ui, t), tx = x + (w - tw) / 2;
+        text_draw(s, &afont_ui, tx > x + 3 ? tx : x + 3, sy + (CTL_H - th) / 2, t, tc);
+        gfx_set_clip(s, view);
+        break;
+    }
+    case HC_CHECK: {
+        struct rect q = { x, sy + 4, 16, 16 };
+        gfx_fill_rrect(s, q, 4, c->checked ? C_ACCENT : RGB(0xff, 0xff, 0xff));
+        gfx_stroke_rrect(s, q, 4, foc || c->checked ? C_ACCENT : border);
+        if (c->checked)
+            for (int k = 0; k < 2; k++) {
+                gfx_line(s, x + 4, sy + 12 + k, x + 7, sy + 15 + k, RGB(0xff, 0xff, 0xff));
+                gfx_line(s, x + 7, sy + 15 + k, x + 12, sy + 8 + k, RGB(0xff, 0xff, 0xff));
+            }
+        break;
+    }
+    case HC_RADIO: {
+        struct rect q = { x, sy + 4, 16, 16 };
+        gfx_fill_rrect(s, q, 8, c->checked ? C_ACCENT : RGB(0xff, 0xff, 0xff));
+        gfx_stroke_rrect(s, q, 8, foc || c->checked ? C_ACCENT : border);
+        if (c->checked) gfx_fill_rrect(s, (struct rect){ x + 5, sy + 9, 6, 6 }, 3, RGB(0xff, 0xff, 0xff));
+        break;
+    }
+    default: break;
+    }
+}
+
 void html_draw(const struct hdoc *d, struct surface *s, struct rect view, int scroll) {
     gfx_set_clip(s, view);
     for (int i = 0; i < d->nruns; i++) {
         const struct hrun *r = &d->runs[i];
         int sy = view.y + r->y - scroll;
-        int h = r->kind == K_HR ? 1 : f_height(r->font);
+        int h = r->kind == K_HR ? 1 : r->kind == K_CTL ? CTL_H : f_height(r->font);
         if (sy + h < view.y || sy > view.y + view.h) continue;
         if (r->kind == K_HR) { gfx_hline(s, view.x + r->x, sy, r->w, RGB(0xd0, 0xd0, 0xd5)); continue; }
+        if (r->kind == K_CTL) { draw_ctl(d, s, view, r, sy); continue; }
         const char *t = d->pool + r->off;
         if (r->font == F_MONO) gfx_text(s, &font_8x16, view.x + r->x, sy, t, r->color);
         else text_draw(s, afont_of(r->font), view.x + r->x, sy, t, r->color);
@@ -669,4 +984,116 @@ int html_link_at(const struct hdoc *d, int x, int y) {
         if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + f_height(r->font)) return r->link;
     }
     return -1;
+}
+
+int html_ctl_at(const struct hdoc *d, int x, int y) {
+    for (int i = 0; i < d->nruns; i++) {
+        const struct hrun *r = &d->runs[i];
+        if (r->kind != K_CTL || r->ctl < 0) continue;
+        if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + CTL_H) return r->ctl;
+    }
+    return -1;
+}
+
+bool html_ctl_rect(const struct hdoc *d, int ci, struct rect *out) {
+    for (int i = 0; i < d->nruns; i++) {
+        const struct hrun *r = &d->runs[i];
+        if (r->kind == K_CTL && r->ctl == ci) { *out = (struct rect){ r->x, r->y, r->w, CTL_H }; return true; }
+    }
+    return false;
+}
+
+int html_ctl_next(const struct hdoc *d, int from, int dir) {
+    if (d->nctl <= 0) return -1;
+    int i = from;
+    if (i < 0 || i >= d->nctl) i = dir > 0 ? -1 : d->nctl;
+    for (int k = 0; k < d->nctl; k++) {
+        i += dir;
+        if (i >= d->nctl) i = 0;
+        if (i < 0) i = d->nctl - 1;
+        if (d->ctl[i].vis && !d->ctl[i].disabled) return i;
+    }
+    return -1;
+}
+
+void html_ctl_toggle(struct hdoc *d, int ci) {
+    if (ci < 0 || ci >= d->nctl) return;
+    struct hctl *c = &d->ctl[ci];
+    if (c->type == HC_CHECK) c->checked = !c->checked;
+    else if (c->type == HC_RADIO) {
+        if (c->name[0])
+            for (int i = 0; i < d->nctl; i++)
+                if (d->ctl[i].type == HC_RADIO && d->ctl[i].form == c->form && strcmp(d->ctl[i].name, c->name) == 0)
+                    d->ctl[i].checked = false;
+        c->checked = true;
+    }
+}
+
+void html_ctl_step(struct hdoc *d, int ci, int dir) {
+    if (ci < 0 || ci >= d->nctl) return;
+    struct hctl *c = &d->ctl[ci];
+    if (c->type != HC_SELECT || c->nopt == 0) return;
+    c->sel = (uint8_t)((c->sel + c->nopt + (dir < 0 ? -1 : 1)) % c->nopt);
+}
+
+int html_form_default_button(const struct hdoc *d, int form) {
+    for (int i = 0; i < d->nctl; i++)
+        if (d->ctl[i].form == form && d->ctl[i].type == HC_SUBMIT && !d->ctl[i].disabled) return i;
+    return -1;
+}
+
+// ---- GET submission ----
+
+struct ub { char *o; int n, cap; };      // cap = usable bytes (excluding the NUL)
+
+static bool ub_chr(struct ub *u, char c) {
+    if (u->n >= u->cap) return false;
+    u->o[u->n++] = c;
+    return true;
+}
+
+static bool ub_enc(struct ub *u, const char *v, bool trunc_ok) {
+    static const char hx[] = "0123456789ABCDEF";
+    for (; *v; v++) {
+        unsigned char c = (unsigned char)*v;
+        bool plain = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                     c == '-' || c == '_' || c == '.' || c == '~';
+        int need = plain || c == ' ' ? 1 : 3;
+        if (u->n + need > u->cap) return trunc_ok;       // never cut an escape in half
+        if (plain) u->o[u->n++] = (char)c;
+        else if (c == ' ') u->o[u->n++] = '+';
+        else { u->o[u->n++] = '%'; u->o[u->n++] = hx[c >> 4]; u->o[u->n++] = hx[c & 15]; }
+    }
+    return true;
+}
+
+bool html_form_build_url(const struct hdoc *d, int form, int submitter, const char *action, char *out, int outsz) {
+    if (outsz < 2) return false;
+    struct ub u = { out, 0, outsz - 1 };
+    for (const char *a = action; *a && *a != '?' && *a != '#'; a++)
+        if (!ub_chr(&u, *a)) { out[0] = 0; return false; }
+    bool first = true;
+    for (int i = 0; i < d->nctl; i++) {
+        const struct hctl *c = &d->ctl[i];
+        if (c->form != form || !c->name[0] || c->disabled) continue;
+        const char *val = NULL;
+        bool text = false;
+        switch (c->type) {
+        case HC_TEXT: case HC_PASSWORD: case HC_TEXTAREA: val = c->value; text = true; break;
+        case HC_HIDDEN: val = c->value; break;
+        case HC_CHECK: case HC_RADIO: if (c->checked) val = c->value; break;
+        case HC_SELECT: if (c->nopt) val = d->opts[c->opt_first + c->sel].value; break;
+        case HC_SUBMIT: if (i == submitter) val = c->value; break;
+        default: break;
+        }
+        if (!val) continue;
+        int mark = u.n;
+        bool ok = ub_chr(&u, first ? '?' : '&') && ub_enc(&u, c->name, false) && ub_chr(&u, '=') && ub_enc(&u, val, text);
+        // Hidden/auxiliary pairs must leave room for what the user typed later in the document.
+        if (ok && !text && u.n + 40 > u.cap && c->type != HC_SUBMIT) ok = false;
+        if (!ok) { u.n = mark; continue; }
+        first = false;
+    }
+    out[u.n] = 0;
+    return true;
 }
