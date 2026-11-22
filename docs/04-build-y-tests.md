@@ -54,3 +54,7 @@ La regla del proyecto es que **ninguna fase se cierra con `make test` en rojo**.
 ## Integración continua local
 
 Antes de cada commit se ejecuta `make clean && make && make test`. Cada merge de un agente se valida igual antes de hacer push a GitHub.
+
+## Teclado y ventana de QEMU
+
+`make run` abre QEMU con el teclado Latinoamericano por defecto (`kbd us` en la Terminal vuelve a EE. UU.). En macOS la ventana de QEMU arranca con un tamaño fijo y no recuerda el último; se puede agrandar arrastrando la esquina o con pantalla completa (Ctrl+Cmd+F). Una resolución configurable está en la fase 14.

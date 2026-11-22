@@ -108,6 +108,25 @@ Todas las llamadas bloqueantes tienen tiempo límite y no dependen del scheduler
 ![App Clock](img/clock-app.png)
 - Todos los colores y medidas están en `kernel/wm/theme.h`, que incluye también una paleta oscura para el futuro. No se usa nada de Apple: el logo, los iconos y el wallpaper son propios.
 
+## 3.9 HTTPS y navegador (`kernel/net/tls.c`, `kernel/net/netjob.c`, `kernel/apps/browser.c`, `html.c`)
+
+- **TLS 1.2 con BearSSL** (`third_party/bearssl`, compilado como `build/libbearssl.a` por `mk/tls.mk`, sin SSE ni AES-NI). `https_get_timeout()` valida la cadena de certificados contra 118 raíces de Mozilla (`kernel/net/ca_roots.c`, generado por `tools/gen_ca_roots.py`) y comprueba el nombre del servidor. Autotests: `[OK] tls https example.com` y `[OK] tls rejects bad cert` (un autofirmado se rechaza con `BR_ERR_X509_NOT_TRUSTED`). La entropía (`kernel/lib/entropy.c`) usa RDRAND si existe; bajo QEMU sin RDRAND es un jitter débil, y la hora sale del RTC en hora local.
+- **Hilo de red** (`netjob.c`): un trabajo a la vez en un hilo propio con pila de 128 KiB y un mutex de red; el escritorio usa `trylock` para no competir por `net_poll()`. El Navegador y `fetch`/`ping` de la Terminal no congelan la interfaz; Esc cancela.
+- **Navegador:** barra de dirección, historial, redirecciones entre http y https, reintento por HTTPS si un sitio http resetea la conexión, respuestas `chunked`, páginas `about:home`, `about:latin1` y `about:form`.
+- **Motor HTML** (`html.c`): análisis tolerante en una sola pasada, texto con fuentes Inter, enlaces, listas, tablas como texto, `<pre>`, imágenes como `[alt]`, formularios dibujados como controles, entidades HTML y UTF-8 con caída a Latin-1. Tiene topes de anidamiento, de líneas y de memoria con aviso `[page truncated]`, y un autotest de robustez con 239 casos (`[OK] html robustness`).
+- **Formularios:** cajas de texto con cursor, casillas, radios, selects y botones; Tab, Enter y clic; envío GET con la URL codificada (`html_form_build_url`). Los POST muestran un aviso. Autotest `[OK] html forms`.
+- **Sin JavaScript:** el kernel no usa coma flotante (sin SSE ni x87), así que un motor JS no es viable sin soft-float.
+
+## 3.10 Teclado Latinoamericano (`kernel/drivers/keyboard.c`)
+
+QEMU envía las teclas por posición física. El driver traduce con la distribución Latinoamericana por defecto (`-` en la tecla de `/` de EE. UU., Mayús+7 es `/`, Mayús+8/9/0 son `( ) =`, la tecla ISO junto a la Z da `<` `>`), con Option como AltGr para `@ | # ~ \ [ ] ^`. El comando `kbd us|latam` de la Terminal cambia la distribución. La ñ y los acentos aún no se pueden escribir.
+
+## 3.11 Módulos de imágenes y CSS (`kernel/gfx/img.c`, `kernel/apps/css.c`)
+
+Ya están en `main` con sus autotests, pero **todavía no están conectados al navegador**:
+- **Imágenes** (`stb_image`, `third_party/stb`): `img_decode()` lee PNG, JPEG (base y progresivo), GIF (primer cuadro) y BMP; rechaza lados mayores de 4096 px o más de 8 megapíxeles antes de decodificar; reduce con enteros (`img_scale`) y dibuja con mezcla alfa (`img_draw`). Autotest `[OK] img decode`, 44 casos.
+- **CSS** (`css.c`): selectores simples, descendiente e hijo, especificidad y `!important`; `display`, colores, tamaños y alineación. Todo con enteros y con límites de memoria. Autotest `[OK] css`, 423 casos.
+
 ## Log de un arranque completo (modo test)
 
 ```
