@@ -1,0 +1,7 @@
+stb_image.h v2.34 (public domain / MIT dual license, https://github.com/nothings/stb)
+Fetched from master; stb_image.h last changed in commit 1da9ade1e66195252114f5da497f244704a6c58d
+(2026-11-19). One 1-line patch (below); the license text is at the end of the header.
+stb_impl.c configures it for the kernel (kernel allocator, PNG/JPEG/GIF/BMP only,
+no HDR/linear/stdio/SIMD/thread-locals). shim/ holds tiny stdlib.h/string.h replacements.
+
+myOS patch: stbi__bmp_load size check casts img_y to int so top-down BMPs (negative height) load.

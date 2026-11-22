@@ -9,3 +9,4 @@ void fs_init(void);
 void net_init(void);
 void html_selftest(void);  // kernel/apps/html_selftest.c (layout engine robustness)
 void tls_selftest(void);   // kernel/lib/tls_selftest.c (BearSSL known-answer checks)
+void img_selftest(void);   // kernel/gfx/img_selftest.c (stb_image decode + downscale checks)

@@ -32,6 +32,7 @@ void kmain(void) {
     if (boot_is_test()) {
         // Headless test mode: render a few frames, then report and exit QEMU.
         tls_selftest();
+        img_selftest();
         html_selftest();
         for (int i = 0; i < 3; i++) desktop_frame();
         kprintf("[TEST] boot OK\n");
