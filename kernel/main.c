@@ -34,6 +34,7 @@ void kmain(void) {
         tls_selftest();
         img_selftest();
         html_selftest();
+        css_selftest();
         for (int i = 0; i < 3; i++) desktop_frame();
         kprintf("[TEST] boot OK\n");
         qemu_exit(QEMU_EXIT_SUCCESS);
