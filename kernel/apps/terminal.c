@@ -7,6 +7,7 @@
 #include "vfs.h"
 #include "net.h"
 #include "rtc.h"
+#include "../drivers/ps2.h"
 
 #define FONT        (&font_8x16)
 #define CW          8
@@ -223,6 +224,7 @@ static void pad_to(char *dst, size_t n, int width) {
 static void cmd_help(void) {
     puts_k("Commands:\n", K_INFO);
     out("  help               this list");
+    out("  kbd [us|latam]     show or set the keyboard layout (default latam)");
     out("  ls [path]          list a directory (dirs end with /)");
     out("  cd [path]          change directory");
     out("  pwd                print the working directory");
@@ -244,7 +246,12 @@ static void cmd_help(void) {
 
 static void cmd_ls(int argc, char **argv) {
     char path[VFS_PATH_MAX];
-    const char *a = argc > 1 ? argv[1] : ".";
+    const char *a = ".";
+    for (int i = 1; i < argc; i++) {          // flags such as -l -a -la are accepted; the listing is always long
+        if (argv[i][0] == '-' && argv[i][1]) continue;
+        a = argv[i];
+        break;
+    }
     int e = resolve(a, path);
     if (e < 0) { perr("ls", a, e); return; }
     struct vfs_stat st;
@@ -502,6 +509,15 @@ static void fetch_done(struct net_job *j) {
     net_job_release();
 }
 
+static void cmd_kbd(int argc, char **argv) {
+    if (argc >= 2) {
+        if (!strcmp(argv[1], "us")) kbd_set_layout(KBD_LAYOUT_US);
+        else if (!strcmp(argv[1], "latam") || !strcmp(argv[1], "es")) kbd_set_layout(KBD_LAYOUT_LATAM);
+        else { err("usage: kbd [us|latam]"); return; }
+    }
+    out("keyboard layout: %s", kbd_layout() == KBD_LAYOUT_US ? "us" : "latam (Latin American)");
+}
+
 static void cmd_date(void) {
     static const char *const wd[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     static const char *const mo[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -548,6 +564,7 @@ static void run(struct window *w, char *line) {
     else if (!strcmp(c, "ping")) cmd_ping(w, argc, argv);
     else if (!strcmp(c, "fetch")) cmd_fetch(w, argc, argv);
     else if (!strcmp(c, "date")) cmd_date();
+    else if (!strcmp(c, "kbd")) cmd_kbd(argc, argv);
     else if (!strcmp(c, "uname")) out("myOS 0.1 x86_64 (hobby kernel, Limine boot)");
     else err("%s: command not found (try 'help')", c);
 }

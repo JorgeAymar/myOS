@@ -92,16 +92,19 @@ class UI:
         self.q.events(evs(True)); time.sleep(0.05); self.q.events(evs(False)); time.sleep(0.1)
 
     def type(self, text):
-        names = {" ": "spc", "/": "slash", ".": "dot", "-": "minus", "\n": "ret"}
+        # The guest keyboard layout is Latin American (default): keys are typed by position.
+        names = {" ": "spc", ".": "dot", "-": "slash", "\n": "ret", ",": "comma"}
         for ch in text:
             if ch == ">":
-                self.chord(["shift"], "dot")
+                self.chord(["shift"], "less")
+            elif ch == "/":
+                self.chord(["shift"], "7")
             elif ch == "_":
-                self.chord(["shift"], "minus")
+                self.chord(["shift"], "slash")
             elif ch.isupper():
                 self.chord(["shift"], ch.lower())
             elif ch == ":":
-                self.chord(["shift"], "semicolon")
+                self.chord(["shift"], "dot")
             else:
                 self.key(names.get(ch, ch))
 
@@ -185,6 +188,7 @@ def main():
         ui.click(411, 761); ui.dblclick(300, 310); ui.shot("files-open-readme")  # double click README.txt
         ui.chord(["ctrl"], "s"); ui.shot("editor-save-readonly")
         ui.click(467, 761)
+        ui.type("kbd\n"); ui.type("ls -la\n")
         ui.type("echo hola > /disk/qa.txt\n"); ui.type("cat /disk/qa.txt\n")
         ui.type("mv /disk/qa.txt /disk/qb.txt\n"); ui.type("ls /disk\n")
         ui.type("rm /disk/qb.txt\n"); ui.type("ls /disk\n"); ui.type("echo x > /nope.txt\n")

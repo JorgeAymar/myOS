@@ -28,6 +28,7 @@ static const uint16_t set1_keys[0x59] = {
     [0x47] = '7', [0x48] = '8', [0x49] = '9', [0x4A] = '-',
     [0x4B] = '4', [0x4C] = '5', [0x4D] = '6', [0x4E] = '+',
     [0x4F] = '1', [0x50] = '2', [0x51] = '3', [0x52] = '0', [0x53] = '.',
+    [0x56] = '<',                       // ISO key left of Z
     [0x57] = KEY_F11, [0x58] = KEY_F12,
 };
 
@@ -78,6 +79,54 @@ static char translate(uint16_t k, uint8_t mods, bool keypad) {
         return upper ? shifted(k) : (char)k;
     }
     return shift ? shifted(k) : (char)k;
+}
+
+// ---- Latin American (Spanish) Mac layout, by physical key position ----
+// QEMU sends scancodes by key position, so a Latin American keyboard needs its own symbol
+// map: '-' sits where US has '/', shift+7 is '/', '(' ')' '=' are shift+8/9/0, and so on.
+// Option/Alt acts as AltGr for @ | # ~ \ [ ] ^. Letters are the same in both layouts.
+// Characters outside ASCII (n-tilde, acute, inverted marks) are not typeable yet.
+static int kbd_layout_id = KBD_LAYOUT_LATAM;
+void kbd_set_layout(int id) { kbd_layout_id = id == KBD_LAYOUT_US ? KBD_LAYOUT_US : KBD_LAYOUT_LATAM; }
+int kbd_layout(void) { return kbd_layout_id; }
+
+// Returns the ASCII for a set-1 code, 0 for "types nothing", or -1 to use the US table.
+static int latam_char(uint8_t code, uint8_t mods) {
+    bool shift = (mods & MOD_SHIFT) != 0, alt = (mods & MOD_ALT) != 0;
+    if (alt) {
+        switch (code) {
+        case 0x02: return '|';  case 0x03: return '@';  case 0x04: return '#';
+        case 0x05: return '~';  case 0x07: return '^';  case 0x10: return '@';
+        case 0x0C: return '\\'; case 0x1A: return '[';  case 0x1B: return ']';
+        case 0x28: return '^';  case 0x2B: return '`';  case 0x56: return '|';
+        default: break;
+        }
+    }
+    switch (code) {
+    case 0x29: return '|';
+    case 0x02: return shift ? '!' : '1';
+    case 0x03: return shift ? '"' : '2';
+    case 0x04: return shift ? '#' : '3';
+    case 0x05: return shift ? '$' : '4';
+    case 0x06: return shift ? '%' : '5';
+    case 0x07: return shift ? '&' : '6';
+    case 0x08: return shift ? '/' : '7';
+    case 0x09: return shift ? '(' : '8';
+    case 0x0A: return shift ? ')' : '9';
+    case 0x0B: return shift ? '=' : '0';
+    case 0x0C: return shift ? '?' : '\'';
+    case 0x0D: return 0;                       // inverted ? !
+    case 0x1A: return 0;                       // dead acute / diaeresis
+    case 0x1B: return shift ? '*' : '+';
+    case 0x27: return 0;                       // n-tilde
+    case 0x28: return shift ? '[' : '{';
+    case 0x2B: return shift ? ']' : '}';
+    case 0x33: return shift ? ';' : ',';
+    case 0x34: return shift ? ':' : '.';
+    case 0x35: return shift ? '_' : '-';
+    case 0x56: return shift ? '>' : '<';
+    default:   return -1;
+    }
 }
 
 static void recompute_mods(struct kbd_state *s) {
@@ -138,6 +187,11 @@ bool kbd_decode(struct kbd_state *s, uint8_t byte, struct input_event *ev) {
     ev->pressed = pressed;
     ev->mods = s->mods;
     ev->ascii = translate(k, s->mods, keypad);
+    if (kbd_layout_id == KBD_LAYOUT_LATAM && !ext && !keypad && ev->mods == (ev->mods & ~MOD_CTRL & ~MOD_SUPER)) {
+        int c = latam_char(code, s->mods);
+        if (c >= 0) ev->ascii = (char)c;
+        else if (k == 'q' && (s->mods & MOD_ALT)) ev->ascii = '@';
+    }
     return true;
 }
 
@@ -182,6 +236,8 @@ static const char *expect_key(struct kbd_state *s, const uint8_t *bytes, int n,
 const char *kbd_selftest(void) {
     struct kbd_state s;
     memset(&s, 0, sizeof s);
+    int saved_layout = kbd_layout_id;
+    kbd_layout_id = KBD_LAYOUT_US;      // the vectors below are US-layout
     EXPECT(SEQ(0x1E), 'a', 'a', true, 0, "kbd: plain a");
     EXPECT(SEQ(0x9E), 'a', 'a', false, 0, "kbd: a break");
     EXPECT(SEQ(0x2A), KEY_LSHIFT, 0, true, MOD_SHIFT, "kbd: lshift make");
@@ -209,5 +265,15 @@ const char *kbd_selftest(void) {
     EXPECT(SEQ(0xE0, 0x2A, 0xE0, 0x37, 0x1E), 'a', 'a', true, 0, "kbd: prtsc skipped");
     EXPECT(SEQ(0xE1, 0x1D, 0x45, 0xE1, 0x9D, 0xC5, 0x58), KEY_F12, 0, true, 0,
            "kbd: pause skipped");
+    kbd_layout_id = KBD_LAYOUT_LATAM;   // Latin American positions
+    memset(&s, 0, sizeof s);
+    EXPECT(SEQ(0x35), '/', '-', true, 0, "kbd latam: - key");
+    EXPECT(SEQ(0x2A), KEY_LSHIFT, 0, true, MOD_SHIFT, "kbd latam: shift");
+    EXPECT(SEQ(0x08), '7', '/', true, MOD_SHIFT, "kbd latam: shift+7 is /");
+    EXPECT(SEQ(0x34), '.', ':', true, MOD_SHIFT, "kbd latam: shift+. is :");
+    EXPECT(SEQ(0x56), '<', '>', true, MOD_SHIFT, "kbd latam: shift+< is >");
+    EXPECT(SEQ(0x0B), '0', '=', true, MOD_SHIFT, "kbd latam: shift+0 is =");
+    EXPECT(SEQ(0xAA), KEY_LSHIFT, 0, false, 0, "kbd latam: shift break");
+    kbd_layout_id = saved_layout;
     return 0;
 }

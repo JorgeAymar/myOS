@@ -72,5 +72,8 @@ void input_push(const struct input_event *ev);
 
 // Self-tests of the decoders (keyboard.c / mouse.c). Return NULL on success
 // or a description of the first failure.
+enum { KBD_LAYOUT_US, KBD_LAYOUT_LATAM };
+void kbd_set_layout(int id);   // KBD_LAYOUT_*
+int kbd_layout(void);
 const char *kbd_selftest(void);
 const char *mouse_selftest(void);
