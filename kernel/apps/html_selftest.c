@@ -77,6 +77,74 @@ static const char *const frags[] = {
 };
 #define NFRAG ((int)(sizeof frags / sizeof frags[0]))
 
+// ---- forms ----
+static int nform_cases;
+
+static int ctl_named(const char *name, int type) {
+    for (int i = 0; i < doc->nctl; i++)
+        if (doc->ctl[i].type == type && strcmp(doc->ctl[i].name, name) == 0) return i;
+    return -1;
+}
+
+static void set_val(int ci, const char *v) {
+    strcpy(doc->ctl[ci].value, v);
+    doc->ctl[ci].len = doc->ctl[ci].cur = (int16_t)strlen(v);
+}
+
+static void forms_selftest(void) {
+    static const char big[] =
+        "<form action=\"/s\" method=get><input type=hidden name=h value=H1><input type=text name=q>"
+        "<input type=submit name=b1 value=One><input type=submit name=b2 value=Two>"
+        "<input type=checkbox name=c value=on><select name=s><option value=a>A<option value=b selected>B</select>"
+        "<textarea name=t>txt</textarea><input type=text value=nameless></form>";
+    html_layout(doc, big, W, false);
+    if (doc->nforms != 1 || doc->forms[0].post || strcmp(doc->forms[0].action, "/s") != 0) panic("html form: form record");
+    if (doc->nctl != 8) panic("html form: expected 8 controls, got %d", doc->nctl);
+    int q = ctl_named("q", HC_TEXT), b1 = ctl_named("b1", HC_SUBMIT), b2 = ctl_named("b2", HC_SUBMIT);
+    int c = ctl_named("c", HC_CHECK), sel = ctl_named("s", HC_SELECT), ta = ctl_named("t", HC_TEXTAREA);
+    if (q < 0 || b1 < 0 || b2 < 0 || c < 0 || sel < 0 || ta < 0 || ctl_named("h", HC_HIDDEN) < 0)
+        panic("html form: control types");
+    if (doc->ctl[sel].nopt != 2 || doc->ctl[sel].sel != 1) panic("html form: select state");
+    if (strcmp(doc->ctl[ta].value, "txt") != 0 || doc->ctl[c].checked) panic("html form: textarea/checkbox");
+    if (html_form_default_button(doc, 0) != b1) panic("html form: default button");
+    char out[300];
+    #define BUILD(sub, act) html_form_build_url(doc, 0, (sub), (act), out, sizeof out)
+    #define EXPECT(str, what) do { nform_cases++; if (strcmp(out, (str)) != 0) panic("html form '%s': got '%s'", what, out); } while (0)
+    BUILD(-1, "https://x.org/s?old=1#f"); EXPECT("https://x.org/s?h=H1&q=&s=b&t=txt", "unchecked box, old query dropped");
+    set_val(q, "hello"); BUILD(-1, "/s"); EXPECT("/s?h=H1&q=hello&s=b&t=txt", "simple");
+    set_val(q, "a b"); BUILD(-1, "/s"); EXPECT("/s?h=H1&q=a+b&s=b&t=txt", "space");
+    set_val(q, "a&b=c+d%e"); BUILD(-1, "/s"); EXPECT("/s?h=H1&q=a%26b%3Dc%2Bd%25e&s=b&t=txt", "& = + %");
+    set_val(q, "caf\xe9~-_."); BUILD(-1, "/s"); EXPECT("/s?h=H1&q=caf%E9~-_.&s=b&t=txt", "latin1 + unreserved");
+    set_val(q, "x"); doc->ctl[c].checked = true; BUILD(b2, "/s");
+    EXPECT("/s?h=H1&q=x&b2=Two&c=on&s=b&t=txt", "checked + clicked button b2 only");
+    BUILD(b1, "/s"); EXPECT("/s?h=H1&q=x&b1=One&c=on&s=b&t=txt", "clicked button b1");
+    html_ctl_toggle(doc, c); if (doc->ctl[c].checked) panic("html form: toggle");
+    html_ctl_step(doc, sel, 1); BUILD(-1, "/s"); EXPECT("/s?h=H1&q=x&s=a&t=txt", "select stepped");
+    set_val(q, "x"); doc->ctl[q].name[0] = 0; BUILD(-1, "/s"); EXPECT("/s?h=H1&s=a&t=txt", "missing name");
+    doc->ctl[q].name[0] = 'q'; BUILD(-1, ""); EXPECT("?h=H1&q=x&s=a&t=txt", "empty action");
+    for (int i = 0; i < HTML_VAL_LEN - 1; i++) doc->ctl[q].value[i] = '%';
+    doc->ctl[q].value[HTML_VAL_LEN - 1] = 0; doc->ctl[q].len = HTML_VAL_LEN - 1;
+    char small[64];
+    nform_cases++;
+    if (!html_form_build_url(doc, 0, -1, "/s", small, sizeof small) || strlen(small) >= sizeof small ||
+        strncmp(small, "/s?h=H1&q=%25", 13) != 0 || small[strlen(small) - 1] == '%' ||
+        (strlen(small) >= 3 && small[strlen(small) - 3] != '%'))
+        panic("html form: overlong value '%s'", small);
+    nform_cases++;
+    if (html_form_build_url(doc, 0, -1, "/a-very-long-action-that-does-not-fit", small, 10) || small[0] != 0)
+        panic("html form: tiny buffer");
+    html_layout(doc, "<form method=POST action=/p><input name=a></form><form><input name=b></form>", W, false);
+    nform_cases++;
+    if (doc->nforms != 2 || !doc->forms[0].post || doc->forms[1].post) panic("html form: method parse");
+    html_layout(doc, "<input name=r type=radio value=1><input name=r type=radio value=2 checked>", W, false);
+    html_ctl_toggle(doc, 0);
+    nform_cases++;
+    if (!doc->ctl[0].checked || doc->ctl[1].checked) panic("html form: radio exclusivity");
+    #undef BUILD
+    #undef EXPECT
+    kprintf("[OK] html forms (%d cases)\n", nform_cases);
+}
+
 void html_selftest(void) {
     uint64_t free0 = pmm_free_bytes();
     buf = kmalloc(BUF);
@@ -160,6 +228,7 @@ void html_selftest(void) {
           "<dl><dt>Term<dd>Definition</dl><noscript>enable js</noscript>");
     check(id++, "dump3", W); dump("pre+quote+dl");
 
+    forms_selftest();
     html_free(doc);
     kfree(buf);
     uint64_t free1 = pmm_free_bytes();
