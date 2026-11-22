@@ -1,6 +1,6 @@
 # 6. Estado y avance
 
-*Actualizado: 19 de noviembre de 2026.*
+*Actualizado: 21 de noviembre de 2026.*
 
 ## Fases
 
@@ -29,8 +29,9 @@
 | Meta | Avance |
 |---|---|
 | **v0.1, primer escritorio usable (fases 0–7)** | **100 %**: integrada y funcionando en QEMU |
-| **Plan completo (16 fases)** | **~75 %**: 12 fases cerradas (0–10 y 12) más PCI |
-| Plan completo, ponderado por esfuerzo | **~68 %**: quedan apps, HTTPS y navegador, pulido y port a ARM |
+| **Plan completo (16 fases)** | **~88 %**: 14 fases cerradas (0–13) más PCI; faltan la 14 y la opcional 15 |
+| Plan completo, ponderado por esfuerzo | **~82 %**: quedan el pulido, el navegador completo (imágenes y CSS) y el port a ARM |
+| Navegador funcional | **~80 %**: HTTP/HTTPS, formularios GET y búsqueda; faltan imágenes y CSS conectados, y POST |
 
 ## Tiempo de arranque
 
@@ -49,7 +50,7 @@ Los autotests de red y de escritura en disco ya solo corren en modo test. El seg
 
 ## Tamaño del código
 
-Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.h` ni las fuentes generadas), con todos los subsistemas de las rondas 1 y 2 ya integrados.
+Unas 22.000 líneas de C y ensamblador propias en `main` (sin contar `limine.h`, las fuentes generadas ni `third_party/`, que trae BearSSL y `stb_image`).
 
 ## Después de la fase 11
 
@@ -66,8 +67,14 @@ Unas 10.000 líneas de C y ensamblador integradas en `main` (sin contar `limine.
 
 - **Navegador, ronda 3:** tildes Latin-1 en todas las fuentes (con caída a Latin-1 si la página no es UTF-8), motor HTML endurecido (239 casos de robustez en el arranque, aviso `[page truncated]`, img/form/select visibles), reintento por HTTPS cuando un sitio http resetea la conexión, y un arreglo del lector TLS que bajó `emol.com` de 76 s a ~1 s. Probados: Google, Wikipedia, Hacker News, BBC, emol.com.
 
+- **Navegador, ronda 4:** formularios interactivos (foco con cursor, escribir, Tab, Enter, casillas, radios y selects; envío GET con la URL codificada; los POST muestran un aviso); páginas `about:form` y `about:latin1`. Probado: una búsqueda en `about:form` carga Wikipedia, y en `google.com` el navegador envía `/search?q=...`. Autotests `[OK] html forms` (14 casos) y `[OK] html robustness` (239 casos).
+- **Teclado Latinoamericano:** el driver ahora interpreta las teclas por posición con la distribución Latinoamericana por defecto (`kbd us|latam` en la Terminal), con Option como AltGr para `@ | # ~ \ [ ] ^`. La ñ y las tildes todavía no se pueden escribir. `ls` acepta `-l`/`-a`.
+- **Módulos nuevos aún sin conectar al navegador:** decodificador de imágenes (`kernel/gfx/img.c`, `stb_image`: PNG, JPEG, GIF y BMP; `[OK] img decode`, 44 casos) y motor CSS (`kernel/apps/css.c`; `[OK] css`, 423 casos). Los intentos de conectarlos quedaron en las ramas `worktree-agent-ac41b765fd612e5c4` (CSS) y `worktree-agent-af8393c8afa1d1e00` (imágenes), sin fusionar.
+- **Subido a GitHub:** hasta `20e245b`. Después hay un commit más en local: la fusión de formularios (`7ec6d65`).
+
 ## Próximos pasos
 
-1. Navegador: formularios funcionales (agente en curso, rama `worktree-agent-adf54d2285e921e80`), imágenes con `stb_image` y CSS mínimo. Sin JavaScript (haría falta soft-float en el kernel).
-2. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable.
-3. Deuda: menús Edit y View sin acciones, botón verde que solo recentra.
+1. Navegador: conectar el módulo CSS y el de imágenes al motor HTML y a la descarga en segundo plano; POST con cuerpo de petición; teclas muertas para ñ y tildes. Sin JavaScript (haría falta soft-float en el kernel).
+2. Editor con formato (negrita, cursiva, encabezados, listas) y lector de `.docx`, como pequeño procesador de texto propio. Ejecutar apps externas (por ejemplo WordCraft, en Rust) exigiría una capa POSIX y un target de Rust para myOS: es un proyecto aparte.
+3. Fase 14: apagado y reinicio por ACPI, animaciones y resolución configurable (también resuelve que la ventana de QEMU arranque pequeña en macOS).
+4. Deuda: menús Edit y View sin acciones, botón verde que solo recentra, escritura no atómica de archivos (el Editor, `cp` y `echo` truncan antes de escribir), `kprintf` con interrupciones apagadas.
