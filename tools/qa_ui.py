@@ -207,6 +207,12 @@ def main():
         ui.shot("browser-https-example-com")
         ui.chord(["ctrl"], "l"); ui.type("https://self-signed.badssl.com\n"); time.sleep(20)
         ui.shot("browser-https-bad-cert")
+
+        # Forms: about:form has a GET form to Wikipedia. Click the box, type, screenshot, Enter.
+        ui.chord(["ctrl"], "l"); ui.type("about:form\n"); time.sleep(2)
+        ui.click(280, 304); ui.type("operating system"); ui.shot("browser-form-typed")
+        ui.key("ret"); time.sleep(60)
+        ui.shot("browser-form-wikipedia")
     finally:
         try:
             q.cmd("quit")

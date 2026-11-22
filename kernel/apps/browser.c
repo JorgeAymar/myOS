@@ -50,6 +50,14 @@ static const char HOME_HTML[] =
     "</ol>"
     "</body></html>";
 
+static const char FORM_HTML[] =
+    "<html><head><title>Form test</title></head><body><h1>Form test</h1>"
+    "<p>Type a query and press Enter (or click Search). This sends a GET request to Wikipedia.</p>"
+    "<form method=\"get\" action=\"https://en.wikipedia.org/w/index.php\">"
+    "<input type=\"search\" name=\"search\" placeholder=\"Search Wikipedia\"> "
+    "<input type=\"submit\" value=\"Search\">"
+    "</form></body></html>";
+
 // ---- small string helpers ----
 
 static bool starts_ci(const char *s, const char *pre) {
@@ -330,6 +338,12 @@ static void begin(struct window *w, const char *url_in, int hop) {
         end_load(w);
         return;
     }
+    if (strcmp(url, "about:form") == 0) {
+        set_status("about:form");
+        show_html(w, FORM_HTML, false);
+        end_load(w);
+        return;
+    }
     bool https;
     char host[96], path[URL_MAX];
     if (!split_url(url, &https, host, sizeof host, path, sizeof path)) {
@@ -531,7 +545,7 @@ static void go_typed(struct window *w, const char *in) {
     int l = (int)strlen(t);
     while (l > 0 && t[l - 1] == ' ') t[--l] = 0;
     if (!l) return;
-    if (strcmp(t, "about:latin1") == 0) { navigate(w, t); return; }
+    if (strcmp(t, "about:latin1") == 0 || strcmp(t, "about:form") == 0) { navigate(w, t); return; }
     if (starts_ci(t, "about:")) { navigate(w, "about:home"); return; }
     if (strstr(t, "://")) { navigate(w, t); return; }
     char hostpart[96]; int o = 0;
@@ -623,7 +637,7 @@ static void paint_statusbar(struct window *w) {
     gfx_reset_clip(s);
 }
 
-static void paint(struct window *w) {
+static void paint_body(struct window *w) {
     struct surface *s = &w->client;
     gfx_reset_clip(s);
     struct rect v = view_rect(w);
@@ -641,7 +655,21 @@ static void paint(struct window *w) {
     }
     paint_toolbar(w);
     paint_statusbar(w);
+}
+
+static void paint(struct window *w) {
+    paint_body(w);
     wm_invalidate_all(w);
+}
+
+// Repaints after a change confined to one control: only its rectangle is invalidated.
+static void paint_ctl(struct window *w, int ci) {
+    struct rect r, v = view_rect(w);
+    paint_body(w);
+    if (doc && html_ctl_rect(doc, ci, &r)) {
+        r.y = r.y - scroll + v.y - 2; r.h += 4; r.x -= 2; r.w += 4;
+        wm_invalidate(w, rect_intersect(r, v));
+    } else wm_invalidate_all(w);
 }
 
 static void repaint_toolbar(struct window *w) {
@@ -670,6 +698,117 @@ static void addr_insert(char c) {
     addr_len++;
 }
 
+// ---- forms ----
+
+static void ctl_focus(struct window *w, int ci) {
+    if (!doc) return;
+    doc->focus = ci;
+    doc->caret = true;
+    if (ci < 0) return;
+    struct rect r, v = view_rect(w);
+    if (html_ctl_rect(doc, ci, &r)) {
+        if (r.y < scroll) scroll = r.y - 24;
+        else if (r.y + r.h > scroll + v.h) scroll = r.y + r.h + 24 - v.h;
+        clamp_scroll(w);
+    }
+}
+
+// Submits form f (GET only). submitter: clicked submit control or -1.
+static void form_submit(struct window *w, int f, int submitter) {
+    if (!doc || f < 0 || f >= doc->nforms) { set_status("This control is not inside a form"); paint(w); return; }
+    char act[HTML_LINK_LEN], abs_url[URL_MAX], out[URL_MAX];
+    strcpy(act, doc->forms[f].action);
+    bool post = doc->forms[f].post;
+    if (post) {
+        doc->focus = -1;
+        set_status("POST forms are not supported yet");
+        paint(w);
+        error_page(w, "POST forms are not supported yet",
+                   "This form sends its data with POST, which the browser cannot do yet. Press F5 to reload the page.", cur_url);
+        return;
+    }
+    if (!resolve(cur_url, act[0] ? act : cur_url, abs_url) ||
+        !html_form_build_url(doc, f, submitter, abs_url, out, sizeof out)) {
+        set_status("Unsupported form action");
+        paint(w);
+        return;
+    }
+    doc->focus = -1;
+    navigate(w, out);
+}
+
+static bool ctl_texty(const struct hctl *c) { return c->type == HC_TEXT || c->type == HC_PASSWORD || c->type == HC_TEXTAREA; }
+
+static void ctl_activate(struct window *w, int ci) {
+    struct hctl *c = &doc->ctl[ci];
+    switch (c->type) {
+    case HC_SUBMIT: form_submit(w, c->form, ci); return;
+    case HC_CHECK: case HC_RADIO: html_ctl_toggle(doc, ci); break;
+    case HC_SELECT: html_ctl_step(doc, ci, 1); break;
+    default: break;
+    }
+    paint_ctl(w, ci);
+}
+
+// Key handling while a control has focus. Returns true when the key was consumed.
+static bool ctl_key(struct window *w, const struct input_event *ev) {
+    int k = ev->keycode, ci = doc->focus;
+    struct hctl *c = &doc->ctl[ci];
+    doc->caret = true;
+    if (k == KEY_ESC) { doc->focus = -1; paint_ctl(w, ci); return true; }
+    if (k == KEY_TAB) {
+        int n = html_ctl_next(doc, ci, (ev->mods & MOD_SHIFT) ? -1 : 1);
+        ctl_focus(w, n);
+        paint(w);
+        return true;
+    }
+    if (k == KEY_ENTER) {
+        form_submit(w, c->form, c->type == HC_SUBMIT ? ci : html_form_default_button(doc, c->form));
+        return true;
+    }
+    if (ctl_texty(c)) {
+        bool ch = true;
+        switch (k) {
+        case KEY_BACKSPACE:
+            if (c->cur > 0) {
+                int j = c->cur - 1;
+                while (j > 0 && (c->value[j] & 0xc0) == 0x80) j--;
+                memmove(c->value + j, c->value + c->cur, (size_t)(c->len - c->cur + 1));
+                c->len = (int16_t)(c->len - (c->cur - j)); c->cur = (int16_t)j;
+            }
+            break;
+        case KEY_DELETE:
+            if (c->cur < c->len) {
+                memmove(c->value + c->cur, c->value + c->cur + 1, (size_t)(c->len - c->cur));
+                c->len--;
+            }
+            break;
+        case KEY_LEFT: if (c->cur > 0) c->cur--; break;
+        case KEY_RIGHT: if (c->cur < c->len) c->cur++; break;
+        case KEY_HOME: c->cur = 0; break;
+        case KEY_END: c->cur = c->len; break;
+        case KEY_UP: case KEY_DOWN: case KEY_PGUP: case KEY_PGDN: break;
+        default:
+            if (ev->ascii >= 0x20 && ev->ascii < 0x7f && c->len < HTML_VAL_LEN - 1 && (!c->maxlen || c->len < c->maxlen)) {
+                memmove(c->value + c->cur + 1, c->value + c->cur, (size_t)(c->len - c->cur + 1));
+                c->value[c->cur++] = ev->ascii;
+                c->len++;
+            } else ch = false;
+            break;
+        }
+        (void)ch;
+        paint_ctl(w, ci);
+        return true;
+    }
+    bool act = ev->ascii == ' ';
+    if (c->type == HC_SELECT) {
+        if (k == KEY_UP || k == KEY_LEFT) { html_ctl_step(doc, ci, -1); paint_ctl(w, ci); return true; }
+        if (k == KEY_DOWN || k == KEY_RIGHT) act = true;
+    }
+    if (act) ctl_activate(w, ci);
+    return true;
+}
+
 static void key(struct window *w, const struct input_event *ev) {
     if (!ev->pressed) return;
     int k = ev->keycode;
@@ -677,13 +816,20 @@ static void key(struct window *w, const struct input_event *ev) {
 
     if (loading && k == KEY_ESC) { stop_load(w); return; }
     if (ev->mods & MOD_CTRL) {
-        if (k == 'l') { addr_focus = true; caret_on = true; addr_cur = addr_len; addr_sel = addr_len > 0; repaint_toolbar(w); }
+        if (k == 'l') { if (doc) doc->focus = -1; addr_focus = true; caret_on = true; addr_cur = addr_len; addr_sel = addr_len > 0; repaint_toolbar(w); }
         else if (k == 'r') reload(w);
         return;
     }
     if ((ev->mods & MOD_ALT) && k == KEY_LEFT) { go_to(w, hist_i - 1); return; }
     if ((ev->mods & MOD_ALT) && k == KEY_RIGHT) { go_to(w, hist_i + 1); return; }
     if (k == KEY_F5) { reload(w); return; }
+
+    if (doc && doc->focus >= 0 && doc->focus < doc->nctl) { ctl_key(w, ev); return; }
+    if (!addr_focus && k == KEY_TAB && doc) {
+        int n = html_ctl_next(doc, -1, (ev->mods & MOD_SHIFT) ? -1 : 1);
+        if (n >= 0) { ctl_focus(w, n); paint(w); }
+        return;
+    }
 
     switch (k) {
     case KEY_UP: scroll_by(w, -40); return;
@@ -766,6 +912,20 @@ static void mouse(struct window *w, int x, int y, uint8_t buttons, int wheel) {
         }
         return;
     }
+    int ci = html_ctl_at(doc, x, y - v.y + scroll);
+    if (ci >= 0 && !doc->ctl[ci].disabled) {
+        struct hctl *c = &doc->ctl[ci];
+        int old = doc->focus;
+        if (c->type == HC_SUBMIT) { ctl_focus(w, ci); form_submit(w, c->form, ci); return; }
+        ctl_focus(w, ci);
+        struct rect r;
+        if (ctl_texty(c) && html_ctl_rect(doc, ci, &r)) c->cur = (int16_t)html_ctl_caret_at(doc, ci, x - r.x);
+        if (c->type == HC_CHECK || c->type == HC_RADIO || c->type == HC_SELECT) ctl_activate(w, ci);
+        else paint(w);
+        (void)old;
+        return;
+    }
+    if (doc->focus >= 0) { doc->focus = -1; paint(w); }
     int li = html_link_at(doc, x, y - v.y + scroll);
     if (li >= 0) {
         char href[HTML_LINK_LEN], u[URL_MAX];
@@ -783,6 +943,10 @@ static void tick(struct window *w, uint64_t now_ms, bool new_second) {
         if (j) finish(w, j);
     }
     if (new_second && addr_focus) { caret_on = !caret_on; repaint_toolbar(w); }
+    if (new_second && doc && doc->focus >= 0 && doc->focus < doc->nctl && ctl_texty(&doc->ctl[doc->focus])) {
+        doc->caret = !doc->caret;
+        paint_ctl(w, doc->focus);
+    }
 }
 
 static void closed(struct window *w) {
