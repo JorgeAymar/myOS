@@ -8,4 +8,5 @@ void sched_init(void);
 void fs_init(void);
 void net_init(void);
 void html_selftest(void);  // kernel/apps/html_selftest.c (layout engine robustness)
-void tls_selftest(void);   // kernel/lib/tls_selftest.c (BearSSL known-answer checks)
+void css_selftest(void);   // kernel/apps/css_selftest.c (CSS engine checks)
+void tls_selftest(void);  // kernel/lib/tls_selftest.c (BearSSL known-answer checks)
